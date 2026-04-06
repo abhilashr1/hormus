@@ -17,6 +17,14 @@ import type {
 type SidebarView = DesktopSnapshot["sidebarView"];
 type AppScreen = "collection-manager" | "workspace";
 
+interface QueryOutputEntry {
+  id: string;
+  query: string;
+  message: string;
+  status: "success" | "error";
+  ranAt: string;
+}
+
 interface AppState {
   currentScreen: AppScreen;
   connections: Connection[];
@@ -29,6 +37,8 @@ interface AppState {
   history: QueryHistoryItem[];
   result: QueryResult | null;
   queryError: string | null;
+  lastRunQueryByTab: Record<string, string>;
+  outputHistoryByTab: Record<string, QueryOutputEntry[]>;
   isBootstrapping: boolean;
   isRunningQuery: boolean;
   bootstrap: () => Promise<void>;
@@ -43,8 +53,12 @@ interface AppState {
   setSelectedSchema: (schema: string) => void;
   setActiveTab: (id: string) => Promise<void>;
   updateTabSql: (id: string, sql: string) => void;
+  updateTabSelection: (id: string, selection: string) => void;
+  renameTab: (id: string, title: string) => void;
+  closeTab: (id: string) => Promise<void>;
   createTab: () => void;
   runTab: (id: string) => Promise<void>;
+  runTabPage: (id: string, pageOffset: number) => Promise<void>;
 }
 
 const STORAGE_KEY = "hormus-phase-2";
@@ -135,6 +149,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   history: [],
   result: null,
   queryError: null,
+  lastRunQueryByTab: {},
+  outputHistoryByTab: {},
   isBootstrapping: true,
   isRunningQuery: false,
 
@@ -303,6 +319,69 @@ export const useAppStore = create<AppState>((set, get) => ({
       return next;
     }),
 
+  updateTabSelection: (id, selection) =>
+    set((state) => {
+      const nextSelection = selection.trim() ? selection : undefined;
+      return {
+        ...state,
+        queryTabs: state.queryTabs.map((tab) => (tab.id === id ? { ...tab, selection: nextSelection } : tab)),
+      };
+    }),
+
+  renameTab: (id, title) =>
+    set((state) => {
+      const nextTitle = title.trim();
+      if (!nextTitle) {
+        return state;
+      }
+
+      const queryTabs = state.queryTabs.map((tab) => (tab.id === id ? { ...tab, title: nextTitle } : tab));
+      const next = { ...state, queryTabs };
+      persist({
+        activeConnectionId: next.activeConnectionId,
+        activeTabId: next.activeTabId,
+        queryTabs: next.queryTabs,
+        sidebarView: next.sidebarView,
+      });
+      return next;
+    }),
+
+  closeTab: async (id) => {
+    const state = get();
+    const closedIndex = state.queryTabs.findIndex((tab) => tab.id === id);
+    if (closedIndex === -1) {
+      return;
+    }
+
+    const remainingTabs = state.queryTabs.filter((tab) => tab.id !== id);
+    const queryTabs = remainingTabs.length > 0 ? remainingTabs : [createEmptyTab()];
+    const fallbackTab = queryTabs[Math.max(0, Math.min(closedIndex, queryTabs.length - 1))];
+    const activeTabId = state.activeTabId === id ? fallbackTab.id : state.activeTabId;
+    const result = state.activeTabId === id ? await getDesktopApi().getResults(activeTabId) : state.result;
+
+    set((current) => {
+      const { [id]: _lastRunQuery, ...lastRunQueryByTab } = current.lastRunQueryByTab;
+      const { [id]: _outputHistory, ...outputHistoryByTab } = current.outputHistoryByTab;
+      const next = {
+        ...current,
+        queryTabs,
+        activeTabId,
+        result,
+        queryError: current.activeTabId === id ? null : current.queryError,
+        lastRunQueryByTab,
+        outputHistoryByTab,
+      };
+
+      persist({
+        activeConnectionId: next.activeConnectionId,
+        activeTabId: next.activeTabId,
+        queryTabs: next.queryTabs,
+        sidebarView: next.sidebarView,
+      });
+      return next;
+    });
+  },
+
   createTab: () =>
     set((state) => {
       const tab: QueryTab = {
@@ -317,6 +396,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeTabId: tab.id,
         result: null,
         queryError: null,
+        lastRunQueryByTab: state.lastRunQueryByTab,
+        outputHistoryByTab: state.outputHistoryByTab,
       };
       persist({
         activeConnectionId: next.activeConnectionId,
@@ -335,12 +416,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set({ isRunningQuery: true });
+    const executedSql = tab.selection ?? tab.sql;
     try {
       const response = await getDesktopApi().runQuery({
         connectionId: state.activeConnectionId,
         tabId: id,
         sql: tab.sql,
         selection: tab.selection,
+        pageOffset: 0,
       });
 
       const history = await getDesktopApi().listHistory(state.activeConnectionId);
@@ -353,6 +436,96 @@ export const useAppStore = create<AppState>((set, get) => ({
           result: response.result,
           history,
           queryError: null,
+          lastRunQueryByTab: {
+            ...current.lastRunQueryByTab,
+            [id]: executedSql,
+          },
+          outputHistoryByTab: {
+            ...current.outputHistoryByTab,
+            [id]: [
+              {
+                id: crypto.randomUUID(),
+                query: executedSql,
+                message: response.result
+                  ? `Returned ${response.result.rowCount.toLocaleString()} rows in ${response.result.durationMs}ms`
+                  : "Query completed",
+                status: "success" as const,
+                ranAt: new Date().toLocaleString(),
+              },
+              ...(current.outputHistoryByTab[id] ?? []),
+            ],
+          },
+          isRunningQuery: false,
+        };
+        persist({
+          activeConnectionId: next.activeConnectionId,
+          activeTabId: next.activeTabId,
+          queryTabs: next.queryTabs,
+          sidebarView: next.sidebarView,
+        });
+        return next;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Query failed";
+
+      set((current) => ({
+        ...current,
+        queryTabs: current.queryTabs.map((item) => (item.id === id ? { ...item, status: "error" } : item)),
+        result: null,
+        queryError: message,
+        lastRunQueryByTab: {
+          ...current.lastRunQueryByTab,
+          [id]: executedSql,
+        },
+        outputHistoryByTab: {
+          ...current.outputHistoryByTab,
+          [id]: [
+            {
+              id: crypto.randomUUID(),
+              query: executedSql,
+              message,
+              status: "error" as const,
+              ranAt: new Date().toLocaleString(),
+            },
+            ...(current.outputHistoryByTab[id] ?? []),
+          ],
+        },
+        isRunningQuery: false,
+      }));
+    }
+  },
+
+  runTabPage: async (id, pageOffset) => {
+    const state = get();
+    const tab = state.queryTabs.find((item) => item.id === id);
+    const executedSql = state.lastRunQueryByTab[id];
+    if (!tab || !executedSql) {
+      return;
+    }
+
+    set({ isRunningQuery: true });
+    try {
+      const response = await getDesktopApi().runQuery({
+        connectionId: state.activeConnectionId,
+        tabId: id,
+        sql: tab.sql,
+        selection: executedSql,
+        pageOffset,
+      });
+
+      set((current) => {
+        const queryTabs: QueryTab[] = current.queryTabs.map((item) =>
+          item.id === id ? { ...response.tab, sql: item.sql, selection: item.selection } : item,
+        );
+        const next = {
+          ...current,
+          queryTabs,
+          result: response.result,
+          queryError: null,
+          lastRunQueryByTab: {
+            ...current.lastRunQueryByTab,
+            [id]: executedSql,
+          },
           isRunningQuery: false,
         };
         persist({

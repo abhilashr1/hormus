@@ -22,7 +22,7 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
@@ -46,4 +46,46 @@ select {
   --ag-row-height: 34px;
   --ag-cell-horizontal-padding: 12px;
   --ag-header-column-separator-display: block;
+}
+
+.hormus-results-grid {
+  --ag-background-color: var(--panel);
+  --ag-foreground-color: var(--foreground);
+  --ag-secondary-foreground-color: var(--muted-foreground);
+  --ag-header-background-color: #15171b;
+  --ag-header-foreground-color: var(--foreground);
+  --ag-odd-row-background-color: rgba(255, 255, 255, 0.015);
+  --ag-border-color: var(--border);
+  --ag-row-border-color: var(--border);
+  --ag-row-hover-color: rgba(94, 106, 210, 0.08);
+  --ag-selected-row-background-color: rgba(94, 106, 210, 0.14);
+  --ag-range-selection-border-color: var(--accent);
+  --ag-input-focus-border-color: var(--accent);
+  --ag-checkbox-checked-color: var(--accent-strong);
+  --ag-checkbox-unchecked-color: var(--muted-foreground);
+  --ag-font-family: var(--font-sans);
+  --ag-header-column-separator-color: rgba(255, 255, 255, 0.04);
+}
+
+.hormus-results-grid .ag-root-wrapper {
+  border: 0;
+  background: var(--panel);
+}
+
+.hormus-results-grid .ag-header,
+.hormus-results-grid .ag-row,
+.hormus-results-grid .ag-center-cols-viewport {
+  background-color: transparent;
+}
+
+.hormus-results-grid .ag-cell,
+.hormus-results-grid .ag-header-cell {
+  color: var(--foreground);
+}
+
+.hormus-results-grid .ag-overlay-no-rows-center {
+  border: 1px solid var(--border);
+  background: var(--panel-muted);
+  color: var(--muted-foreground);
+  font-size: 12px;
 }

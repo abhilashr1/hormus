@@ -45,6 +45,8 @@ export const queryResultSchema = z.object({
   rows: z.array(z.record(z.unknown())),
   rowCount: z.number(),
   durationMs: z.number(),
+  pageSize: z.number().optional(),
+  pageOffset: z.number().optional(),
 });
 
 export const queryHistoryItemSchema = z.object({
@@ -123,6 +125,7 @@ export const queryRunInputSchema = z.object({
   tabId: z.string(),
   sql: z.string(),
   selection: z.string().optional(),
+  pageOffset: z.number().int().nonnegative().optional(),
 });
 
 export type Connection = z.infer<typeof connectionSchema>;

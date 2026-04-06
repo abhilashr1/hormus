@@ -105,38 +105,54 @@ Window Model
 Query Editor
 	•	Monaco editor
 	•	Multi-tab queries
+	•	Query editor tabs are closable; closing the final tab creates a fresh empty query tab
+	•	Query editor tabs can be renamed from the tab bar
 	•	Per-connection editor workspace opened after connection selection
-	•	Run selected / full query
-	•	Keyboard shortcuts
+	•	Run selected SQL when a non-empty selection exists; otherwise run the full editor contents
+	•	Run Query button and Cmd+Enter on macOS / Ctrl+Enter on Windows/Linux share the same execution behavior
 	•	Basic autocomplete
 
 Query Execution
-	•	Execute SQL statements
+	•	Execute SQL statements in the editor in order
+	•	When multiple statements are executed, display the result from the final statement
+	•	Ignore SQL comments before execution while preserving comment-like text inside quoted strings
 	•	Handle errors
 	•	Multi-statement support
+	•	Read-only connections reject statements that do not match the allowed read-query prefixes
 
 Results Grid
 	•	Virtualized rendering
 	•	Column resizing
+	•	Column widths should be compact by default and estimated from the column name plus returned values instead of enforcing a large fixed minimum
 	•	Sorting
 	•	Copy data
 	•	CSV export
-	•	Row limit (e.g. 10k)
+	•	Server-side result pagination for row-returning queries
+	•	Default page size is 100 rows, exposed as a configurable shared constant
+	•	Navigation controls for first, previous, next, and last page
+	•	Pagination fetches the requested page from the database on demand instead of loading all rows into memory
+	•	Results panel has an unclosable Output tab and a closable Results tab
+	•	Output tab shows a per-query-editor-tab run history with query text, returned-row summaries, errors, and timestamps
+	•	Successful row-returning queries auto-switch to the Results tab; errors auto-switch to the Output tab
 
 Schema Explorer
 	•	Schema selector in the top-left of the query workspace
 	•	Tree view of tables and other database objects on the left side
+	•	Database object list is scrollable and should not resize the workspace window
 	•	Lazy loading
 	•	Click to query
 
 Workspace Layout
 	•	Screen 1: Collection Manager for connection CRUD and choosing a database
 	•	Screen 2: Query workspace for a specific connection
+	•	Query workspace opens at the maximized work-area size by default
+	•	Query workspace size should remain bounded by the screen and not grow based on sidebar object count, query length, or result size
 	•	Query workspace keeps the schema selector at the top-left
 	•	Left rail shows database objects in a tree structure
 	•	Main area is split vertically:
-		•	Top half: query editor
-		•	Bottom half: results grid
+		•	Top half: query editor, initially 50% of the available workspace height
+		•	Bottom half: results panel, filling the remaining height
+		•	Query editor and results panel can be resized with a horizontal divider
 
 Adapter Layer (v1)
 

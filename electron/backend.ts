@@ -170,24 +170,28 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
         throw new Error(`Connection ${input.connectionId} not found`);
       }
 
-      const result = await runLiveQuery(connection, input.selection ?? input.sql);
+      const pageOffset = input.pageOffset ?? 0;
+      const result = await runLiveQuery(connection, input.selection ?? input.sql, pageOffset);
+      const previousTab = state.queryTabs[index];
       const tab: QueryTab = {
-        ...state.queryTabs[index],
-        sql: input.sql,
-        selection: input.selection,
+        ...previousTab,
+        sql: pageOffset === 0 ? input.sql : previousTab.sql,
+        selection: pageOffset === 0 ? input.selection : previousTab.selection,
         status: "success",
         lastRunAt: "Just now",
       };
 
       state.queryTabs[index] = tab;
       await storage.setResult(input.tabId, result);
-      await storage.prependHistory(input.connectionId, {
-        id: crypto.randomUUID(),
-        title: tab.title,
-        ranAt: "Just now",
-        durationMs: result.durationMs,
-        preview: (input.selection ?? input.sql).split("\n").join(" ").slice(0, 72),
-      });
+      if (pageOffset === 0) {
+        await storage.prependHistory(input.connectionId, {
+          id: crypto.randomUUID(),
+          title: tab.title,
+          ranAt: "Just now",
+          durationMs: result.durationMs,
+          preview: (input.selection ?? input.sql).split("\n").join(" ").slice(0, 72),
+        });
+      }
 
       return {
         tab: clone(tab),

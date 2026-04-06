@@ -4,10 +4,12 @@ import type {
   Connection,
   ConnectionTestInput,
   ConnectionTestResult,
+  QueryRunInput,
   QueryResult,
   SchemaNode,
   TableDescription,
 } from "../src/shared/ipc.js";
+import { QUERY_RESULT_PAGE_SIZE } from "../src/shared/query.js";
 
 type ConnectionWithSecret = Connection & { password?: string };
 type TestConnectionWithSecret = ConnectionTestInput & { password?: string };
@@ -63,7 +65,165 @@ function mapRows(rows: Record<string, unknown>[]) {
   );
 }
 
-async function queryPostgres(connection: ConnectionWithSecret, sql: string): Promise<QueryResult> {
+function normalizePageOffset(pageOffset?: number) {
+  return Math.max(0, pageOffset ?? 0);
+}
+
+function stripSqlComments(sql: string) {
+  let output = "";
+  let index = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  while (index < sql.length) {
+    const char = sql[index];
+    const next = sql[index + 1];
+
+    if (!inDoubleQuote && char === "'") {
+      output += char;
+      if (inSingleQuote && next === "'") {
+        output += next;
+        index += 2;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+      index += 1;
+      continue;
+    }
+
+    if (!inSingleQuote && char === "\"") {
+      output += char;
+      if (inDoubleQuote && next === "\"") {
+        output += next;
+        index += 2;
+        continue;
+      }
+      inDoubleQuote = !inDoubleQuote;
+      index += 1;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
+      while (index < sql.length && sql[index] !== "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
+      output += " ";
+      index += 2;
+      while (index < sql.length && !(sql[index] === "*" && sql[index + 1] === "/")) {
+        index += 1;
+      }
+      index = Math.min(index + 2, sql.length);
+      continue;
+    }
+
+    output += char;
+    index += 1;
+  }
+
+  return output;
+}
+
+function stripTrailingSemicolon(sql: string) {
+  return sql.trim().replace(/;+$/, "");
+}
+
+function splitSqlStatements(sql: string) {
+  const statements: string[] = [];
+  let current = "";
+  let index = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  while (index < sql.length) {
+    const char = sql[index];
+    const next = sql[index + 1];
+
+    if (!inDoubleQuote && char === "'") {
+      current += char;
+      if (inSingleQuote && next === "'") {
+        current += next;
+        index += 2;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+      index += 1;
+      continue;
+    }
+
+    if (!inSingleQuote && char === "\"") {
+      current += char;
+      if (inDoubleQuote && next === "\"") {
+        current += next;
+        index += 2;
+        continue;
+      }
+      inDoubleQuote = !inDoubleQuote;
+      index += 1;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === ";") {
+      const statement = current.trim();
+      if (statement) {
+        statements.push(statement);
+      }
+      current = "";
+      index += 1;
+      continue;
+    }
+
+    current += char;
+    index += 1;
+  }
+
+  const statement = current.trim();
+  if (statement) {
+    statements.push(statement);
+  }
+
+  return statements;
+}
+
+function prepareStatementsForExecution(sql: string) {
+  return splitSqlStatements(stripSqlComments(sql));
+}
+
+function isPaginatableQuery(sql: string) {
+  return /^(select|with)\b/i.test(sql);
+}
+
+function buildPaginatedSql(statement: string, pageOffset?: number) {
+  const offset = normalizePageOffset(pageOffset);
+
+  return {
+    dataSql: `select * from (${statement}) as hormus_query_page limit ${QUERY_RESULT_PAGE_SIZE} offset ${offset}`,
+    countSql: `select count(*) as total_count from (${statement}) as hormus_query_count`,
+    pageOffset: offset,
+    pageSize: QUERY_RESULT_PAGE_SIZE,
+  };
+}
+
+function totalCountFromValue(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    return Number(value);
+  }
+
+  return 0;
+}
+
+async function queryPostgres(connection: ConnectionWithSecret, statements: string[], pageOffset?: number): Promise<QueryResult> {
   const client = new Client({
     host: connection.host,
     port: connection.port || defaultPort(connection.kind),
@@ -77,7 +237,36 @@ async function queryPostgres(connection: ConnectionWithSecret, sql: string): Pro
   await client.connect();
 
   try {
-    const response = await client.query(sql);
+    for (const statement of statements.slice(0, -1)) {
+      await client.query(statement);
+    }
+
+    const lastStatement = statements.at(-1);
+    if (!lastStatement) {
+      return {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    if (isPaginatableQuery(lastStatement)) {
+      const paginated = buildPaginatedSql(lastStatement, pageOffset);
+      const countResponse = await client.query<{ total_count: string }>(paginated.countSql);
+      const response = await client.query(paginated.dataSql);
+
+      return {
+        columns: response.fields.map((field: { name: string }) => field.name),
+        rows: mapRows(response.rows as Record<string, unknown>[]),
+        rowCount: totalCountFromValue(countResponse.rows[0]?.total_count),
+        durationMs: Date.now() - startedAt,
+        pageSize: paginated.pageSize,
+        pageOffset: paginated.pageOffset,
+      };
+    }
+
+    const response = await client.query(lastStatement);
     return {
       columns: response.fields.map((field: { name: string }) => field.name),
       rows: mapRows(response.rows as Record<string, unknown>[]),
@@ -114,7 +303,7 @@ async function testPostgres(connection: TestConnectionWithSecret): Promise<Conne
   }
 }
 
-async function queryMySql(connection: ConnectionWithSecret, sql: string): Promise<QueryResult> {
+async function queryMySql(connection: ConnectionWithSecret, statements: string[], pageOffset?: number): Promise<QueryResult> {
   const client = await mysql.createConnection({
     host: connection.host,
     port: connection.port || defaultPort(connection.kind),
@@ -127,7 +316,40 @@ async function queryMySql(connection: ConnectionWithSecret, sql: string): Promis
   const startedAt = Date.now();
 
   try {
-    const [rows, fields] = await client.query(sql);
+    for (const statement of statements.slice(0, -1)) {
+      await client.query(statement);
+    }
+
+    const lastStatement = statements.at(-1);
+    if (!lastStatement) {
+      return {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    if (isPaginatableQuery(lastStatement)) {
+      const paginated = buildPaginatedSql(lastStatement, pageOffset);
+      const [countRows] = await client.query<mysql.RowDataPacket[]>(paginated.countSql);
+      const [rows, fields] = await client.query(paginated.dataSql);
+      const rowArray = Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+      const columns = Array.isArray(fields)
+        ? fields.map((field: { name: string }) => field.name)
+        : Object.keys(rowArray[0] ?? {});
+
+      return {
+        columns,
+        rows: mapRows(rowArray),
+        rowCount: totalCountFromValue(countRows[0]?.total_count),
+        durationMs: Date.now() - startedAt,
+        pageSize: paginated.pageSize,
+        pageOffset: paginated.pageOffset,
+      };
+    }
+
+    const [rows, fields] = await client.query(lastStatement);
     const rowArray = Array.isArray(rows) ? rows : [];
     const lastRows = Array.isArray(rowArray[0]) ? (rowArray.at(-1) as Record<string, unknown>[]) : (rowArray as Record<string, unknown>[]);
     const lastFields = Array.isArray(fields?.[0]) ? fields.at(-1) ?? [] : fields ?? [];
@@ -350,9 +572,14 @@ async function describeMySqlTable(connection: ConnectionWithSecret, schema: stri
   }
 }
 
-export async function runLiveQuery(connection: ConnectionWithSecret, sql: string) {
-  assertReadAllowed(connection, sql);
-  return connection.kind === "postgresql" ? queryPostgres(connection, sql) : queryMySql(connection, sql);
+export async function runLiveQuery(connection: ConnectionWithSecret, sql: string, pageOffset?: QueryRunInput["pageOffset"]) {
+  const statements = prepareStatementsForExecution(sql);
+  for (const statement of statements) {
+    assertReadAllowed(connection, statement);
+  }
+  return connection.kind === "postgresql"
+    ? queryPostgres(connection, statements, pageOffset)
+    : queryMySql(connection, statements, pageOffset);
 }
 
 export async function testLiveConnection(connection: TestConnectionWithSecret) {

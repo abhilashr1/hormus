@@ -1,0 +1,1 @@
+export const QUERY_RESULT_PAGE_SIZE = 100;

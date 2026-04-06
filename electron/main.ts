@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, screen } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import {
   connectionCreateInputSchema,
@@ -38,6 +38,16 @@ function resolvePreloadPath() {
   return path.join(process.cwd(), "dist-electron", "electron", "preload.cjs");
 }
 
+function getMaximizedWindowBounds() {
+  const { workArea } = screen.getPrimaryDisplay();
+  return {
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
+  };
+}
+
 async function createCollectionManagerWindow() {
   const existing = windows.get(COLLECTION_MANAGER_KEY);
   if (existing) {
@@ -46,8 +56,7 @@ async function createCollectionManagerWindow() {
   }
 
   const window = new BrowserWindow({
-    width: 1480,
-    height: 940,
+    ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
     titleBarStyle: "hiddenInset",
@@ -58,6 +67,7 @@ async function createCollectionManagerWindow() {
       nodeIntegration: false,
     },
   });
+  window.maximize();
 
   window.on("closed", () => {
     windows.delete(COLLECTION_MANAGER_KEY);
@@ -85,8 +95,7 @@ async function createConnectionWindow(connectionId?: string) {
   }
 
   const window = new BrowserWindow({
-    width: 1540,
-    height: 960,
+    ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
     titleBarStyle: "hiddenInset",
@@ -97,6 +106,7 @@ async function createConnectionWindow(connectionId?: string) {
       nodeIntegration: false,
     },
   });
+  window.maximize();
 
   window.on("closed", () => {
     windows.delete(activeConnectionId);
