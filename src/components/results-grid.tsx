@@ -1,5 +1,12 @@
 import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry, type CellClickedEvent, type ColDef, type SelectionChangedEvent } from "ag-grid-community";
+import {
+  AllCommunityModule,
+  ModuleRegistry,
+  type CellClickedEvent,
+  type CellContextMenuEvent,
+  type ColDef,
+  type SelectionChangedEvent,
+} from "ag-grid-community";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -33,6 +40,16 @@ interface ResultsGridProps {
 
 type ResultsPanelTab = "output" | "results";
 type ResultRow = QueryResult["rows"][number];
+type CellContextMenu = {
+  x: number;
+  y: number;
+  column: string;
+  value: unknown;
+};
+type ViewedCell = {
+  title: string;
+  content: string;
+};
 
 function estimateColumnWidth(column: string, rows: QueryResult["rows"]) {
   const valueLengths = rows.slice(0, 100).map((row) => String(row[column] ?? "").length);
@@ -52,11 +69,41 @@ function rowsToClipboardText(rows: ResultRow[], columns: string[]) {
   return rows.map((row) => columns.map((column) => csvEscape(valueToClipboardText(row[column]))).join(",")).join("\n");
 }
 
+function formatCellValue(value: unknown) {
+  if (value === null) {
+    return "null";
+  }
+
+  if (value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      try {
+        return JSON.stringify(JSON.parse(trimmed), null, 2);
+      } catch {
+        return value;
+      }
+    }
+  }
+
+  return String(value);
+}
+
 export function ResultsGrid({ result, error, queryText, outputHistory = [], isLoading, onPageChange }: ResultsGridProps) {
   const [activePanel, setActivePanel] = useState<ResultsPanelTab>("output");
   const [isResultsTabClosed, setIsResultsTabClosed] = useState(false);
+  const [cellContextMenu, setCellContextMenu] = useState<CellContextMenu | null>(null);
+  const [viewedCell, setViewedCell] = useState<ViewedCell | null>(null);
   const selectedRowsRef = useRef<ResultRow[]>([]);
   const lastClickedCellRef = useRef<string | null>(null);
+  const resultsPanelRef = useRef<HTMLDivElement>(null);
   const hasResults = Boolean(result && result.columns.length > 0);
   const showResultsTab = hasResults && !isResultsTabClosed;
   const totalRows = result?.rowCount ?? 0;
@@ -86,7 +133,29 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
   useEffect(() => {
     selectedRowsRef.current = [];
     lastClickedCellRef.current = null;
+    setCellContextMenu(null);
+    setViewedCell(null);
   }, [result]);
+
+  useEffect(() => {
+    if (!cellContextMenu) {
+      return undefined;
+    }
+
+    const closeMenu = () => setCellContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [cellContextMenu]);
 
   const columnDefs = useMemo<ColDef[]>(
     () =>
@@ -128,6 +197,13 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
     } catch {
       // Clipboard writes can be denied by the host environment.
     }
+  };
+  const openCellValue = (cell: CellContextMenu) => {
+    setCellContextMenu(null);
+    setViewedCell({
+      title: cell.column,
+      content: formatCellValue(cell.value),
+    });
   };
 
   return (
@@ -239,7 +315,7 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
           </div>
         </ScrollArea>
       ) : (
-        <>
+        <div ref={resultsPanelRef} className="relative flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2">
             <div className="text-[12px] text-[var(--muted-foreground)]">
               Page {currentPage + 1}, Total Results: {totalRows.toLocaleString()}
@@ -286,6 +362,20 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
               onCellClicked={(event: CellClickedEvent<ResultRow>) => {
                 lastClickedCellRef.current = valueToClipboardText(event.value);
               }}
+              onCellContextMenu={(event: CellContextMenuEvent<ResultRow>) => {
+                if (!(event.event instanceof MouseEvent)) {
+                  return;
+                }
+
+                event.event.preventDefault();
+                const panelBounds = resultsPanelRef.current?.getBoundingClientRect();
+                setCellContextMenu({
+                  x: panelBounds ? event.event.clientX - panelBounds.left : event.event.clientX,
+                  y: panelBounds ? event.event.clientY - panelBounds.top : event.event.clientY,
+                  column: event.column.getColDef().headerName ?? String(event.column.getColId()),
+                  value: event.value,
+                });
+              }}
               onSelectionChanged={(event: SelectionChangedEvent<ResultRow>) => {
                 selectedRowsRef.current = event.api.getSelectedRows();
               }}
@@ -296,7 +386,48 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
               }}
             />
           </div>
-        </>
+          {cellContextMenu ? (
+            <Card
+              className="absolute z-40 w-36 gap-0 rounded-md border border-[var(--border)] bg-[var(--popover)] p-1 py-1 shadow-[0_16px_48px_rgba(0,0,0,0.45)]"
+              style={{ left: cellContextMenu.x, top: cellContextMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start rounded-[4px]"
+                onClick={() => openCellValue(cellContextMenu)}
+              >
+                View
+              </Button>
+            </Card>
+          ) : null}
+          {viewedCell ? (
+            <Card className="absolute inset-y-0 right-0 z-30 flex w-[min(520px,80%)] min-w-[360px] gap-0 overflow-hidden rounded-none border-y-0 border-r-0 border-l border-[var(--border)] bg-[var(--popover)] py-0 shadow-[-24px_0_80px_rgba(0,0,0,0.45)]">
+              <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{viewedCell.title}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close cell value"
+                  className="size-7"
+                  onClick={() => setViewedCell(null)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+              <ScrollArea className="min-h-0 flex-1">
+                <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-5 text-[var(--foreground)]">
+                  {viewedCell.content}
+                </pre>
+              </ScrollArea>
+            </Card>
+          ) : null}
+        </div>
       )}
     </Card>
   );
