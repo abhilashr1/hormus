@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, Command, Database, Play, Plus, Search, Table2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Database, Play, Plus, Search, Table2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -134,18 +134,6 @@ export function QueryWorkspace() {
   return (
     <div className="h-screen overflow-hidden bg-[var(--background)] px-3 pb-3 pt-[calc(var(--window-titlebar-height)+0.75rem)] text-[var(--foreground)]">
       <Card className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none bg-[#0f1114] py-0">
-        <aside className="hidden w-[68px] shrink-0 border-r border-[var(--border)] bg-[#0b0c0f] lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-4">
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex size-8 items-center justify-center border border-[var(--border)] bg-[#1b6f4f] text-[13px] font-semibold text-white">
-              H
-            </div>
-            <Button variant="ghost" size="icon">
-              <Command className="size-4" />
-            </Button>
-          </div>
-          <div className="text-[10px] text-[var(--muted-foreground)]">DB</div>
-        </aside>
-
         <div className="flex min-h-0 min-w-0 flex-1">
           <aside
             className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[#111317]"

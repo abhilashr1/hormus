@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, screen } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import {
   connectionCreateInputSchema,
@@ -16,6 +16,13 @@ import { createElectronDesktopBackend } from "./backend.js";
 let backend: HormusDesktopBackend | null = null;
 const windows = new Map<string, BrowserWindow>();
 const COLLECTION_MANAGER_KEY = "collection-manager";
+const APP_NAME = "Hormus - Database Client";
+
+app.setName(APP_NAME);
+
+function getAppIcon() {
+  return nativeImage.createFromPath(path.join(process.cwd(), "hormus.png"));
+}
 
 function getRendererUrl() {
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -59,6 +66,8 @@ async function createCollectionManagerWindow() {
     ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
+    title: APP_NAME,
+    icon: getAppIcon(),
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0f1115",
     webPreferences: {
@@ -98,6 +107,8 @@ async function createConnectionWindow(connectionId?: string) {
     ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
+    title: APP_NAME,
+    icon: getAppIcon(),
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0f1115",
     webPreferences: {
@@ -155,6 +166,9 @@ function registerIpc() {
 
 async function start() {
   await app.whenReady();
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(getAppIcon());
+  }
   backend = await createElectronDesktopBackend();
   registerIpc();
   await createCollectionManagerWindow();

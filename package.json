@@ -1,5 +1,6 @@
 {
   "name": "hormus",
+  "productName": "Hormus - Database Client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
