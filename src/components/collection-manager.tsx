@@ -2,8 +2,12 @@ import { Database, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/use-app-store";
 import type { Connection } from "@/shared/ipc";
@@ -64,11 +68,11 @@ function defaultPort(kind: Connection["kind"]) {
 
 function fieldLabel(label: string, children: ReactNode, error?: string) {
   return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-medium text-[var(--muted-foreground)]">{label}</span>
+    <div className="block">
+      <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>
       {children}
       {error ? <span className="mt-2 block text-xs text-[#d97b7b]">{error}</span> : null}
-    </label>
+    </div>
   );
 }
 
@@ -311,25 +315,28 @@ export function CollectionManager() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-4">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="p-4">
             <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
               Saved {state.connections.length ? state.connections.length : ""}
             </div>
 
             {state.connections.length === 0 ? (
-              <div className="border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5 text-sm text-[var(--muted-foreground)]">
+              <Card className="border-dashed px-4 py-5 text-sm text-muted-foreground">
                 Add a new connection to begin
-              </div>
+              </Card>
             ) : (
               <div className="space-y-1">
                 {filteredConnections.map((connection) => (
-                  <button
+                  <Button
                     key={connection.id}
+                    type="button"
+                    variant="ghost"
                     className={cn(
-                      "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
+                      "h-auto w-full justify-start rounded-md px-3 py-3 text-left",
                       selectedId === connection.id && mode !== "create"
                         ? "bg-[var(--panel-elevated)]"
-                        : "hover:bg-[var(--panel-muted)]",
+                        : undefined,
                     )}
                     onClick={() => {
                       setSelectedId(connection.id);
@@ -348,15 +355,16 @@ export function CollectionManager() {
                     <span className="rounded-[6px] bg-[var(--panel-elevated)] px-2 py-0.5 text-[10px] text-[var(--muted-foreground)]">
                       {connection.kind}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
-          </div>
+            </div>
+          </ScrollArea>
         </aside>
 
         <main className="flex min-h-screen items-center justify-center bg-[#08090b] p-8">
-          <div className="w-full max-w-[560px] border border-[var(--border)] bg-[var(--panel)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
+          <Card className="w-full max-w-[560px] gap-0 rounded-lg p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
             {showForm ? (
               <>
                 <div className="flex items-start justify-between gap-4">
@@ -378,8 +386,8 @@ export function CollectionManager() {
                     "Connection Type",
                     <Select
                       value={form.kind}
-                      onChange={(event) => {
-                        const kind = event.target.value as Connection["kind"];
+                      onValueChange={(value) => {
+                        const kind = value as Connection["kind"];
                         setForm((current) => ({
                           ...current,
                           kind,
@@ -388,8 +396,13 @@ export function CollectionManager() {
                         setSubmitError("");
                       }}
                     >
-                      <option value="postgresql">PostgreSQL</option>
-                      <option value="mysql">MySQL</option>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="postgresql">PostgreSQL</SelectItem>
+                        <SelectItem value="mysql">MySQL</SelectItem>
+                      </SelectContent>
                     </Select>,
                   )}
 
@@ -397,9 +410,14 @@ export function CollectionManager() {
                     "Authentication Method",
                     <Select
                       value={form.authMethod}
-                      onChange={(event) => setField("authMethod", event.target.value as Connection["authMethod"])}
+                      onValueChange={(value) => setField("authMethod", value as Connection["authMethod"])}
                     >
-                      <option value="username_password">Username / Password</option>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="username_password">Username / Password</SelectItem>
+                      </SelectContent>
                     </Select>,
                   )}
 
@@ -454,21 +472,24 @@ export function CollectionManager() {
                     errors.database,
                   )}
 
-                  <label className="flex items-center gap-3 text-sm text-[var(--muted-foreground)]">
-                    <input type="checkbox" checked={form.readOnly} onChange={(event) => setField("readOnly", event.target.checked)} />
+                  <Label className="flex items-center gap-3 text-sm text-muted-foreground">
+                    <Checkbox checked={form.readOnly} onCheckedChange={(checked) => setField("readOnly", checked === true)} />
                     Read Only Mode
-                  </label>
+                  </Label>
 
                   <div>
                     <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Connection Color</p>
                     <div className="flex flex-wrap gap-2">
                       {connectionColors.map((color) => (
-                        <button
+                        <Button
                           key={color}
                           type="button"
+                          variant="outline"
+                          size="icon"
                           aria-label={`Use color ${color}`}
+                          aria-pressed={form.color === color}
                           className={cn(
-                            "size-7 border transition-transform",
+                            "size-7 rounded-md p-0 transition-transform",
                             form.color === color ? "scale-110 border-white" : "border-transparent hover:scale-105",
                           )}
                           style={{ backgroundColor: color }}
@@ -566,7 +587,7 @@ export function CollectionManager() {
                 </>
               )
             )}
-          </div>
+          </Card>
         </main>
       </div>
     </div>

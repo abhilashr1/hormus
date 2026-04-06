@@ -46,6 +46,13 @@ Frontend
 	•	shadcn/ui
 	•	TailwindCSS
 
+UI Component Policy
+	•	All reusable UI controls must use shadcn/ui components or wrappers in src/components/ui.
+	•	Buttons, form controls, tabs, panels/cards, scrollable areas, separators, checkboxes, selects, badges, and resizable split panes must use the local shadcn/ui primitives.
+	•	Do not add raw button, input, select, checkbox, tab, panel, scrollbar, or resize-handle markup in feature components unless it is inside a shadcn/ui primitive implementation.
+	•	Monaco Editor and AG Grid remain approved specialized widgets, but their surrounding chrome and controls should still be shadcn/ui.
+	•	Use neutral default shadcn button/status colors by default. Connection colors may identify a selected connection, but they should not tint primary action buttons or general status badges unless a requirement explicitly calls for that.
+
 State
 	•	Zustand
 	•	React Query
@@ -152,7 +159,7 @@ Workspace Layout
 	•	Main area is split vertically:
 		•	Top half: query editor, initially 50% of the available workspace height
 		•	Bottom half: results panel, filling the remaining height
-		•	Query editor and results panel can be resized with a horizontal divider
+		•	Query editor and results panel can be resized with a horizontal shadcn/ui Resizable divider
 
 Adapter Layer (v1)
 

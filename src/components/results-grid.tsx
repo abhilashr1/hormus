@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { QueryResult } from "@/shared/ipc";
 import { QUERY_RESULT_PAGE_SIZE } from "@/shared/query";
@@ -87,68 +89,70 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
       : "Run a query to see output";
 
   return (
-    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+    <Card className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-none py-0">
       <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex min-w-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setActivePanel("output")}
-            className={cn(
-              "px-3 py-1.5 text-[13px] transition-colors",
-              activePanel === "output"
-                ? "bg-[var(--panel-elevated)] text-white"
-                : "text-[var(--muted-foreground)] hover:bg-[var(--panel-muted)] hover:text-white",
-            )}
-          >
-            Output
-          </button>
+        <Tabs value={activePanel} onValueChange={(value) => setActivePanel(value as ResultsPanelTab)} className="min-w-0">
+          <TabsList className="h-auto gap-1 rounded-none bg-transparent p-0">
+            <TabsTrigger
+              value="output"
+              className="h-8 rounded-md border-0 px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-[var(--panel-elevated)] data-[state=active]:text-white"
+            >
+              Output
+            </TabsTrigger>
           {showResultsTab ? (
             <div
               className={cn(
-                "group inline-flex items-center gap-2 px-3 py-1.5 text-[13px] transition-colors",
+                "group inline-flex items-center rounded-md text-[13px] transition-colors",
                 activePanel === "results"
                   ? "bg-[var(--panel-elevated)] text-white"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--panel-muted)] hover:text-white",
+                  : "text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
               )}
             >
-              <button type="button" onClick={() => setActivePanel("results")}>
+              <TabsTrigger
+                value="results"
+                className="h-8 rounded-r-none border-0 bg-transparent px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none"
+              >
                 Results
-              </button>
-              <button
+              </TabsTrigger>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 aria-label="Close Results tab"
                 onClick={() => {
                   setIsResultsTabClosed(true);
                   setActivePanel("output");
                 }}
-                className="inline-flex size-4 items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--panel-muted)] hover:text-white"
+                className="mr-1 size-6 rounded-l-none text-inherit hover:bg-transparent hover:text-foreground focus-visible:ring-0"
               >
                 <X className="size-3" />
-              </button>
+              </Button>
             </div>
           ) : null}
-        </div>
-        <Badge className={error ? "border-red-500/30 bg-red-500/10 text-red-200" : undefined}>
+          </TabsList>
+        </Tabs>
+        <Badge variant={error ? "destructive" : "secondary"} className={error ? "border-red-500/30 bg-red-500/10 text-red-200" : undefined}>
           {error ? "error" : result ? "complete" : "idle"}
         </Badge>
       </div>
       <Separator />
       {activePanel === "output" ? (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="p-4">
           {outputHistory.length > 0 ? (
             <div className="space-y-4">
               {outputHistory.map((entry) => (
-                <div key={entry.id} className="border border-[var(--border)] bg-[#0f1114]">
+                <Card key={entry.id} className="gap-0 rounded-none bg-[#0f1114] py-0">
                   <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
                     <p className={cn("text-[13px]", entry.status === "error" ? "text-red-300" : "text-[var(--foreground)]")}>
                       {entry.message}
                     </p>
                     <span className="text-[11px] text-[var(--muted-foreground)]">{entry.ranAt}</span>
                   </div>
-                  <pre className="max-h-[180px] overflow-auto p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">
-                    {entry.query}
-                  </pre>
-                </div>
+                  <ScrollArea className="max-h-[180px]">
+                    <pre className="p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">{entry.query}</pre>
+                  </ScrollArea>
+                </Card>
               ))}
             </div>
           ) : (
@@ -165,13 +169,16 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
                   Query
                 </p>
-                <pre className="mt-2 max-h-[220px] overflow-auto border border-[var(--border)] bg-[#0f1114] p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">
-                  {queryText?.trim() ? queryText : "No query has been run yet."}
-                </pre>
+                <ScrollArea className="mt-2 max-h-[220px] border border-[var(--border)] bg-[#0f1114]">
+                  <pre className="p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">
+                    {queryText?.trim() ? queryText : "No query has been run yet."}
+                  </pre>
+                </ScrollArea>
               </div>
             </div>
           )}
-        </div>
+          </div>
+        </ScrollArea>
       ) : (
         <>
           <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2">

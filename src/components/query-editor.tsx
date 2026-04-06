@@ -1,5 +1,6 @@
 import Editor from "@monaco-editor/react";
 import type { OnMount } from "@monaco-editor/react";
+import { Card } from "@/components/ui/card";
 
 interface QueryEditorProps {
   value: string;
@@ -30,7 +31,7 @@ export function QueryEditor({ value, onChange, onSelectionChange, onRun }: Query
   };
 
   return (
-    <div className="h-full overflow-hidden border border-[var(--border)] bg-[#15171b]">
+    <Card className="h-full gap-0 overflow-hidden rounded-none bg-[#15171b] py-0">
       <Editor
         height="100%"
         defaultLanguage="sql"
@@ -51,6 +52,6 @@ export function QueryEditor({ value, onChange, onSelectionChange, onRun }: Query
           hideCursorInOverviewRuler: true,
         }}
       />
-    </div>
+    </Card>
   );
 }

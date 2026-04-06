@@ -1,9 +1,13 @@
 import { ArrowLeft, ChevronDown, Command, Database, Play, Plus, Table2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
 import { cn } from "@/lib/utils";
@@ -13,42 +17,8 @@ export function QueryWorkspace() {
   const state = useAppStore();
   const activeConnection = selectActiveConnection(state);
   const activeTab = selectActiveTab(state);
-  const workspaceBodyRef = useRef<HTMLDivElement | null>(null);
-  const [editorHeight, setEditorHeight] = useState(50);
-  const [isResizing, setIsResizing] = useState(false);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-
-  const resizeEditor = useCallback((clientY: number) => {
-    const bounds = workspaceBodyRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.height <= 0) {
-      return;
-    }
-
-    const nextHeight = ((clientY - bounds.top) / bounds.height) * 100;
-    setEditorHeight(Math.min(80, Math.max(25, nextHeight)));
-  }, []);
-
-  useEffect(() => {
-    if (!isResizing) {
-      return;
-    }
-
-    const handlePointerMove = (event: PointerEvent) => resizeEditor(event.clientY);
-    const handlePointerUp = () => setIsResizing(false);
-
-    document.body.style.cursor = "row-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [isResizing, resizeEditor]);
 
   if (!activeConnection || !activeTab) {
     return null;
@@ -70,7 +40,7 @@ export function QueryWorkspace() {
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--background)] p-3 text-[var(--foreground)]">
-      <div className="flex h-full w-full overflow-hidden border border-[var(--border)] bg-[#0f1114]">
+      <Card className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none bg-[#0f1114] py-0">
         <aside className="hidden w-[68px] shrink-0 border-r border-[var(--border)] bg-[#0b0c0f] lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-4">
           <div className="flex flex-col items-center gap-3">
             <div className="flex size-8 items-center justify-center border border-[var(--border)] bg-[#1b6f4f] text-[13px] font-semibold text-white">
@@ -115,58 +85,67 @@ export function QueryWorkspace() {
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Schema</p>
                 <ChevronDown className="size-3 text-[var(--muted-foreground)]" />
               </div>
-              <Select value={state.selectedSchema} onChange={(event) => state.setSelectedSchema(event.target.value)}>
-                {state.schemas.map((schema) => (
-                  <option key={schema.name} value={schema.name}>
-                    {schema.name}
-                  </option>
-                ))}
+              <Select value={state.selectedSchema} onValueChange={state.setSelectedSchema}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select schema" />
+                </SelectTrigger>
+                <SelectContent>
+                  {state.schemas.map((schema) => (
+                    <SelectItem key={schema.name} value={schema.name}>
+                      {schema.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <div className="mt-2">
                 <Input placeholder="Search tables and objects" />
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-3">
-              <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
-                Database Objects
-              </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="px-2 py-3">
+                <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
+                  Database Objects
+                </div>
 
-              <div className="space-y-4">
-                <div>
-                  <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Tables</div>
-                  <div className="space-y-0.5">
-                    {tableObjects.map((table) => (
-                      <button
-                        key={table.name}
-                        className="flex w-full items-center justify-between px-2.5 py-2 text-left transition-colors hover:bg-[var(--panel-muted)]"
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Table2 className="size-3.5 shrink-0 text-[var(--accent)]" />
-                          <div className="min-w-0">
-                            <p className="truncate text-[13px] font-medium">{table.name}</p>
-                            <p className="text-[11px] text-[var(--muted-foreground)]">{table.columns} columns</p>
+                <div className="space-y-4">
+                  <div>
+                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Tables</div>
+                    <div className="space-y-0.5">
+                      {tableObjects.map((table) => (
+                        <Button
+                          key={table.name}
+                          type="button"
+                          variant="ghost"
+                          className="h-auto w-full justify-between rounded-md px-2.5 py-2 text-left"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] font-medium">{table.name}</p>
+                              <p className="text-[11px] text-[var(--muted-foreground)]">{table.columns} columns</p>
+                            </div>
                           </div>
-                        </div>
-                        <span className="pl-2 text-[11px] text-[var(--muted-foreground)]">{table.rowCount || " "}</span>
-                      </button>
-                    ))}
+                          <span className="pl-2 text-[11px] text-[var(--muted-foreground)]">{table.rowCount || " "}</span>
+                        </Button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Views</div>
-                  <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">No views loaded yet.</div>
-                </div>
+                  <div>
+                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Views</div>
+                    <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">No views loaded yet.</div>
+                  </div>
 
-                <div>
-                  <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Functions</div>
-                  <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
-                    No functions loaded yet.
+                  <div>
+                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Functions</div>
+                    <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
+                      No functions loaded yet.
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </ScrollArea>
 
             <div className="border-t border-[var(--border)] p-3">
               <Button variant="ghost" size="sm" onClick={state.returnToCollectionManager} className="w-full justify-start">
@@ -188,12 +167,9 @@ export function QueryWorkspace() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span
-                  className="h-6 rounded-[6px] px-2 text-[11px] leading-6 text-white"
-                  style={{ backgroundColor: activeConnection.color }}
-                >
+                <Badge variant="secondary" className="h-6 rounded-md px-2 text-[11px]">
                   {activeConnection.readOnly ? "read only" : "read / write"}
-                </span>
+                </Badge>
                 <Button size="sm" onClick={() => void state.runTab(activeTab.id)} disabled={state.isRunningQuery}>
                   <Play className="size-4" />
                   {state.isRunningQuery ? "Running..." : "Run Query"}
@@ -203,66 +179,69 @@ export function QueryWorkspace() {
 
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex items-center gap-1 border-b border-[var(--border)] px-3 py-2">
-                {state.queryTabs.map((tab) => (
-                  <div
-                    key={tab.id}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      startRenamingTab(tab);
-                    }}
-                    className={cn(
-                      "group inline-flex items-center gap-2 text-[13px] transition-colors",
-                      tab.id === activeTab.id
-                        ? "bg-[var(--panel-elevated)] text-white"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--panel-muted)] hover:text-white",
-                      )}
-                  >
-                    {renamingTabId === tab.id ? (
-                      <input
-                        autoFocus
-                        value={renameDraft}
-                        onChange={(event) => setRenameDraft(event.target.value)}
-                        onBlur={commitRename}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            commitRename();
-                          }
-                          if (event.key === "Escape") {
-                            setRenamingTabId(null);
-                            setRenameDraft("");
-                          }
-                        }}
-                        onClick={(event) => event.stopPropagation()}
-                        className="h-7 w-[160px] border border-[var(--border)] bg-[#0f1114] px-2 text-[13px] text-[var(--foreground)] outline-none"
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void state.setActiveTab(tab.id);
-                        }}
+                <Tabs value={activeTab.id} onValueChange={(value) => void state.setActiveTab(value)} className="min-w-0 flex-1">
+                  <TabsList className="h-auto max-w-full justify-start gap-1 overflow-hidden rounded-none bg-transparent p-0">
+                    {state.queryTabs.map((tab) => (
+                      <div
+                        key={tab.id}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           startRenamingTab(tab);
                         }}
-                        className="max-w-[180px] truncate py-1.5 pl-3"
+                        className={cn(
+                          "group inline-flex min-w-0 items-center rounded-md text-[13px] transition-colors",
+                          tab.id === activeTab.id
+                            ? "bg-[var(--panel-elevated)] text-white"
+                            : "text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
+                        )}
                       >
-                        {tab.title}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Close ${tab.title}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void state.closeTab(tab.id);
-                      }}
-                      className="mr-2 inline-flex size-5 items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--panel-muted)] hover:text-white"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </div>
-                ))}
+                        {renamingTabId === tab.id ? (
+                          <Input
+                            autoFocus
+                            value={renameDraft}
+                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                commitRename();
+                              }
+                              if (event.key === "Escape") {
+                                setRenamingTabId(null);
+                                setRenameDraft("");
+                              }
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            className="h-7 w-[160px] rounded-md text-[13px]"
+                          />
+                        ) : (
+                          <TabsTrigger
+                            value={tab.id}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              startRenamingTab(tab);
+                            }}
+                            className="h-8 max-w-[180px] justify-start truncate rounded-r-none border-0 bg-transparent px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none"
+                          >
+                            <span className="truncate">{tab.title}</span>
+                          </TabsTrigger>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Close ${tab.title}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void state.closeTab(tab.id);
+                          }}
+                          className="mr-1 size-6 rounded-l-none text-inherit hover:bg-transparent hover:text-foreground focus-visible:ring-0"
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </TabsList>
+                </Tabs>
                 <Button size="icon" variant="ghost" onClick={state.createTab}>
                   <Plus className="size-4" />
                 </Button>
@@ -278,32 +257,21 @@ export function QueryWorkspace() {
                 </div>
               </div>
 
-              <div ref={workspaceBodyRef} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-[160px] p-3" style={{ flexBasis: `${editorHeight}%` }}>
-                  <QueryEditor
-                    value={activeTab.sql}
-                    onChange={(next) => state.updateTabSql(activeTab.id, next)}
-                    onSelectionChange={(selection) => state.updateTabSelection(activeTab.id, selection)}
-                    onRun={() => void state.runTab(activeTab.id)}
-                  />
-                </div>
+              <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+                <ResizablePanel defaultSize="50%" minSize="25%" maxSize="80%" className="min-h-[160px]">
+                  <div className="h-full p-3">
+                    <QueryEditor
+                      value={activeTab.sql}
+                      onChange={(next) => state.updateTabSql(activeTab.id, next)}
+                      onSelectionChange={(selection) => state.updateTabSelection(activeTab.id, selection)}
+                      onRun={() => void state.runTab(activeTab.id)}
+                    />
+                  </div>
+                </ResizablePanel>
 
-                <div
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="Resize query editor and results"
-                  tabIndex={0}
-                  onPointerDown={(event) => {
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    setIsResizing(true);
-                    resizeEditor(event.clientY);
-                  }}
-                  className="group flex h-2 shrink-0 cursor-row-resize items-center bg-[var(--panel)]"
-                >
-                  <div className="h-px w-full bg-[var(--border)] transition-colors group-hover:bg-[var(--accent)]" />
-                </div>
+                <ResizableHandle withHandle className="bg-[var(--border)]" />
 
-                <div className="min-h-[180px] flex-1 overflow-hidden bg-[var(--panel)]">
+                <ResizablePanel minSize="20%" className="min-h-[180px] overflow-hidden bg-[var(--panel)]">
                   <ResultsGrid
                     result={state.result ?? undefined}
                     error={state.queryError ?? undefined}
@@ -312,12 +280,12 @@ export function QueryWorkspace() {
                     isLoading={state.isRunningQuery}
                     onPageChange={(pageOffset) => void state.runTabPage(activeTab.id, pageOffset)}
                   />
-                </div>
-              </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </div>
           </main>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

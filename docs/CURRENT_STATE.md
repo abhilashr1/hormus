@@ -18,7 +18,8 @@ Implemented foundations:
 - Monaco SQL editor.
 - AG Grid results table.
 - Maximized query workspace layout with a fixed viewport shell, scrollable database-object sidebar, and resizable editor/results split.
-- Tailwind-based dark desktop shell with local shadcn-style primitives.
+- Tailwind-based dark desktop shell with local shadcn/ui primitives backed by Radix UI and `react-resizable-panels`.
+- shadcn/ui component policy documented in `AGENTS.md` for future implementation work.
 - Live PostgreSQL and MySQL query execution via `pg` and `mysql2`.
 - Live schema/table metadata loading for PostgreSQL and MySQL.
 - Basic table description IPC/backend support.
@@ -44,7 +45,9 @@ Implemented foundations:
 - Query Workspace UI: `src/components/query-workspace.tsx`
 - Query editor: `src/components/query-editor.tsx`
 - Results grid: `src/components/results-grid.tsx`
+- shadcn/ui primitives: `src/components/ui/*`
 - Visual tokens: `src/index.css`
+- Agent/project instructions: `AGENTS.md`
 
 ## What Works
 
@@ -72,6 +75,10 @@ Implemented foundations:
 - Successful row-returning query runs switch to the Results tab; errors switch to the Output tab.
 - Query editor tabs can be created, closed, and renamed inline from the tab bar.
 - Query history is stored per connection.
+- Collection Manager forms now use shadcn/ui `Button`, `Card`, `Checkbox`, `Input`, `Label`, `ScrollArea`, and Radix-backed `Select`.
+- Query workspace now uses shadcn/ui `Select`, `ScrollArea`, `Tabs`, `Badge`, `Button`, `Card`, and `Resizable` around the editor/results split.
+- Results panel tabs and output scroll regions use shadcn/ui `Tabs`, `Button`, `Card`, `Badge`, `Separator`, and `ScrollArea`.
+- The UI theme now defines shadcn-compatible tokens in `src/index.css` and keeps default action/status colors neutral instead of using connection-color hints.
 - The production build passes with:
 
 ```bash
@@ -97,11 +104,12 @@ npm run build
 - There is no Electron dev orchestration command that runs Vite and Electron together with hot reload.
 - There is no automated test suite configured.
 - Packaging for macOS and Windows is not implemented.
-- Monaco and AG Grid keep the renderer bundle large; the current build emits a chunk-size warning.
+- Monaco, AG Grid, and Radix/shadcn UI dependencies keep the renderer bundle large; the current build emits a chunk-size warning.
+- npm currently reports 3 dependency audit findings after the shadcn/Radix dependency install. `npm audit fix` has not been run because it may make unrelated dependency changes.
 
 ## Verification
 
-Last verified on 2026-04-06:
+Last verified on 2026-04-06 after the shadcn/ui migration:
 
 ```bash
 npm run build
@@ -109,7 +117,7 @@ npm run build
 
 Result: build passes.
 
-Build warning: Vite reports the renderer bundle is larger than 500 kB after minification. This is expected for the current Monaco + AG Grid setup and should be addressed with chunk splitting later.
+Build warning: Vite reports the renderer bundle is larger than 500 kB after minification. This is expected for the current Monaco + AG Grid + Radix/shadcn setup and should be addressed with chunk splitting later.
 
 Electron GUI launch was not verified during this review.
 
@@ -123,3 +131,4 @@ Electron GUI launch was not verified during this review.
 6. Add focused tests for storage migration, credential handling, IPC validation, and read-only query safety.
 7. Add bundle splitting for Monaco and AG Grid.
 8. Add packaging workflow after the core query path is safer.
+9. Keep new UI work on shadcn/ui primitives and avoid raw controls in feature components.
