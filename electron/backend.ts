@@ -1,6 +1,7 @@
 import type {
   ConnectionCreateInput,
   ConnectionDeleteInput,
+  ConnectionTestInput,
   ConnectionUpdateInput,
   DescribeTableInput,
   DesktopSnapshot,
@@ -10,7 +11,7 @@ import type {
   QueryTab,
 } from "../src/shared/ipc.js";
 import { desktopSnapshotSchema } from "../src/shared/ipc.js";
-import { describeLiveTable, listLiveSchemas, runLiveQuery } from "./db.js";
+import { describeLiveTable, listLiveSchemas, runLiveQuery, testLiveConnection } from "./db.js";
 import { DesktopStorage } from "./storage.js";
 
 interface BackendState {
@@ -100,11 +101,19 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
       return connection;
     },
 
-    async updateConnection(input: ConnectionUpdateInput) {
-      return storage.updateConnection(input);
-    },
+	    async updateConnection(input: ConnectionUpdateInput) {
+	      return storage.updateConnection(input);
+	    },
 
-    async deleteConnection(input: ConnectionDeleteInput) {
+	    async testConnection(input: ConnectionTestInput) {
+	      const storedConnection = input.id ? await storage.getConnection(input.id) : null;
+	      return testLiveConnection({
+	        ...input,
+	        password: input.password ?? storedConnection?.password,
+	      });
+	    },
+	
+	    async deleteConnection(input: ConnectionDeleteInput) {
       await storage.deleteConnection(input.id);
 
       if (state.activeConnectionId === input.id) {

@@ -4,6 +4,7 @@ import type { IpcMainInvokeEvent } from "electron";
 import {
   connectionCreateInputSchema,
   connectionDeleteInputSchema,
+  connectionTestInputSchema,
   connectionUpdateInputSchema,
   type HormusDesktopBackend,
   describeTableInputSchema,
@@ -34,7 +35,7 @@ function buildRendererUrl(screen: "collection-manager" | "workspace", connection
 }
 
 function resolvePreloadPath() {
-  return path.join(process.cwd(), "dist-electron", "electron", "preload.js");
+  return path.join(process.cwd(), "dist-electron", "electron", "preload.cjs");
 }
 
 async function createCollectionManagerWindow() {
@@ -123,6 +124,7 @@ function registerIpc() {
   handle("connections:list", async () => desktopBackend.listConnections());
   handle("connections:create", async (_event, input) => desktopBackend.createConnection(connectionCreateInputSchema.parse(input)));
   handle("connections:update", async (_event, input) => desktopBackend.updateConnection(connectionUpdateInputSchema.parse(input)));
+  handle("connections:test", async (_event, input) => desktopBackend.testConnection(connectionTestInputSchema.parse(input)));
   handle("connections:delete", async (_event, input) => desktopBackend.deleteConnection(connectionDeleteInputSchema.parse(input)));
   handle("schemas:list", async (_event, connectionId: string) => desktopBackend.listSchemas(connectionId));
   handle("tables:list", async (_event, input) => desktopBackend.listTables(listTablesInputSchema.parse(input)));

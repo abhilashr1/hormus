@@ -17,10 +17,11 @@ export function getDesktopApi(): HormusDesktopApi {
 
   return {
     bootstrap: async () => ({ connections: [], activeConnectionId: "", sidebarView: "schemas", queryTabs: [], activeTabId: "" }),
-    listConnections: async () => [],
-    createConnection: async () => unavailable(),
-    updateConnection: async () => unavailable(),
-    deleteConnection: async () => unavailable(),
+	    listConnections: async () => [],
+	    createConnection: async () => unavailable(),
+	    updateConnection: async () => unavailable(),
+	    testConnection: async () => unavailable(),
+	    deleteConnection: async () => unavailable(),
     listSchemas: async () => unavailable(),
     listTables: async () => unavailable(),
     describeTable: async () => unavailable(),

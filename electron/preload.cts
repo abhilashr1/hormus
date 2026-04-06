@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ConnectionCreateInput,
   ConnectionDeleteInput,
+  ConnectionTestInput,
   ConnectionUpdateInput,
   DescribeTableInput,
   HormusDesktopApi,
@@ -14,6 +15,7 @@ const api: HormusDesktopApi = {
   listConnections: () => ipcRenderer.invoke("connections:list"),
   createConnection: (input: ConnectionCreateInput) => ipcRenderer.invoke("connections:create", input),
   updateConnection: (input: ConnectionUpdateInput) => ipcRenderer.invoke("connections:update", input),
+  testConnection: (input: ConnectionTestInput) => ipcRenderer.invoke("connections:test", input),
   deleteConnection: (input: ConnectionDeleteInput) => ipcRenderer.invoke("connections:delete", input),
   listSchemas: (connectionId: string) => ipcRenderer.invoke("schemas:list", connectionId),
   listTables: (input: ListTablesInput) => ipcRenderer.invoke("tables:list", input),

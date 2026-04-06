@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const databaseKindSchema = z.enum(["postgresql", "mysql"]);
-export const environmentSchema = z.enum(["production", "staging", "development"]);
+export const authenticationMethodSchema = z.enum(["username_password"]);
 export const sidebarViewSchema = z.enum(["connections", "schemas", "history"]);
 export const queryStatusSchema = z.enum(["idle", "running", "success", "error"]);
 
@@ -11,11 +11,12 @@ export const connectionSchema = z.object({
   kind: databaseKindSchema,
   host: z.string(),
   port: z.number().int().positive(),
+  authMethod: authenticationMethodSchema,
   username: z.string(),
   database: z.string(),
-  environment: environmentSchema,
   readOnly: z.boolean(),
   latencyMs: z.number(),
+  color: z.string(),
   favorite: z.boolean().optional(),
 });
 
@@ -83,6 +84,25 @@ export const connectionUpdateInputSchema = connectionSchema.partial().extend({
   password: z.string().optional(),
 });
 
+export const connectionTestInputSchema = connectionSchema
+  .pick({
+    kind: true,
+    host: true,
+    port: true,
+    authMethod: true,
+    username: true,
+    database: true,
+  })
+  .extend({
+    id: z.string().optional(),
+    password: z.string().optional(),
+  });
+
+export const connectionTestResultSchema = z.object({
+  success: z.literal(true),
+  durationMs: z.number(),
+});
+
 export const connectionDeleteInputSchema = z.object({
   id: z.string(),
 });
@@ -114,6 +134,8 @@ export type DesktopSnapshot = z.infer<typeof desktopSnapshotSchema>;
 export type TableDescription = z.infer<typeof tableDescriptionSchema>;
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;
 export type ConnectionUpdateInput = z.infer<typeof connectionUpdateInputSchema>;
+export type ConnectionTestInput = z.infer<typeof connectionTestInputSchema>;
+export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>;
 export type ConnectionDeleteInput = z.infer<typeof connectionDeleteInputSchema>;
 export type ListTablesInput = z.infer<typeof listTablesInputSchema>;
 export type DescribeTableInput = z.infer<typeof describeTableInputSchema>;
@@ -124,6 +146,7 @@ export interface HormusDesktopBackend {
   listConnections: () => Promise<Connection[]>;
   createConnection: (input: ConnectionCreateInput) => Promise<Connection>;
   updateConnection: (input: ConnectionUpdateInput) => Promise<Connection>;
+  testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (input: ConnectionDeleteInput) => Promise<{ success: true }>;
   listSchemas: (connectionId: string) => Promise<SchemaNode[]>;
   listTables: (input: ListTablesInput) => Promise<SchemaNode["tables"]>;
@@ -138,6 +161,7 @@ export interface HormusDesktopApi {
   listConnections: () => Promise<Connection[]>;
   createConnection: (input: ConnectionCreateInput) => Promise<Connection>;
   updateConnection: (input: ConnectionUpdateInput) => Promise<Connection>;
+  testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (input: ConnectionDeleteInput) => Promise<{ success: true }>;
   listSchemas: (connectionId: string) => Promise<SchemaNode[]>;
   listTables: (input: ListTablesInput) => Promise<SchemaNode["tables"]>;

@@ -26,6 +26,7 @@ interface PersistedDesktopState {
 
 const STORAGE_DIR = "state";
 const STORAGE_FILE = "desktop.json";
+const DEFAULT_CONNECTION_COLOR = "#2f80ed";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -61,14 +62,12 @@ function migrateState(raw: unknown): PersistedDesktopState {
       kind: connection.kind === "mysql" ? "mysql" : "postgresql",
       host: connection.host ?? "",
       port: typeof connection.port === "number" ? connection.port : connection.kind === "mysql" ? 3306 : 5432,
+      authMethod: connection.authMethod === "username_password" ? connection.authMethod : "username_password",
       username: connection.username ?? "",
       database: connection.database ?? "",
-      environment:
-        connection.environment === "production" || connection.environment === "staging"
-          ? connection.environment
-          : "development",
       readOnly: Boolean(connection.readOnly),
       latencyMs: typeof connection.latencyMs === "number" ? connection.latencyMs : 0,
+      color: typeof connection.color === "string" ? connection.color : DEFAULT_CONNECTION_COLOR,
       favorite: connection.favorite,
       secret: connection.secret,
     }));
@@ -165,12 +164,13 @@ export class DesktopStorage {
       kind: input.kind,
       host: input.host,
       port: input.port,
+      authMethod: input.authMethod,
       username: input.username,
       database: input.database,
-      environment: input.environment,
       readOnly: input.readOnly,
       favorite: input.favorite,
       latencyMs: Math.floor(Math.random() * 25) + 8,
+      color: input.color,
       secret: input.password ? encodeSecret(input.password) : undefined,
     };
 

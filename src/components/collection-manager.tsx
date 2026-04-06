@@ -1,8 +1,7 @@
 import { Database, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -13,51 +12,95 @@ type FormState = {
   id?: string;
   name: string;
   kind: Connection["kind"];
+  authMethod: Connection["authMethod"];
   host: string;
   port: string;
   username: string;
-  database: string;
-  environment: Connection["environment"];
-  readOnly: boolean;
-  favorite: boolean;
   password?: string;
+  database: string;
+  readOnly: boolean;
+  color: string;
 };
 
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
+const connectionColors = [
+  "#2f80ed",
+  "#27ae60",
+  "#eb5757",
+  "#f2994a",
+  "#f2c94c",
+  "#56ccf2",
+  "#9b51e0",
+  "#bb6bd9",
+  "#00a896",
+  "#ff6b6b",
+];
+
 const emptyForm: FormState = {
   name: "",
   kind: "postgresql",
-  host: "",
+  authMethod: "username_password",
+  host: "localhost",
   port: "5432",
   username: "",
-  database: "",
-  environment: "development",
-  readOnly: false,
-  favorite: false,
   password: "",
+  database: "",
+  readOnly: false,
+  color: connectionColors[0],
 };
 
 function kindLabel(kind: Connection["kind"]) {
   return kind === "postgresql" ? "PostgreSQL" : "MySQL";
 }
 
+function authMethodLabel(method: Connection["authMethod"]) {
+  return method === "username_password" ? "Username / Password" : method;
+}
+
 function defaultPort(kind: Connection["kind"]) {
   return kind === "postgresql" ? "5432" : "3306";
 }
 
+function fieldLabel(label: string, children: ReactNode, error?: string) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-xs font-medium text-[var(--muted-foreground)]">{label}</span>
+      {children}
+      {error ? <span className="mt-2 block text-xs text-[#d97b7b]">{error}</span> : null}
+    </label>
+  );
+}
+
 export function CollectionManager() {
   const state = useAppStore();
-  const [selectedId, setSelectedId] = useState<string>(state.connections[0]?.id ?? "");
-  const selectedConnection = useMemo(
-    () => state.connections.find((connection) => connection.id === selectedId) ?? null,
-    [selectedId, state.connections],
-  );
+  const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [mode, setMode] = useState<"create" | "edit">("create");
+  const [mode, setMode] = useState<"create" | "edit" | "view">("create");
+  const [search, setSearch] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
-  const [submitError, setSubmitError] = useState<string>("");
+  const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testMessage, setTestMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  const filteredConnections = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) {
+      return state.connections;
+    }
+
+    return state.connections.filter((connection) =>
+      [connection.name, connection.host, connection.database, connection.username, kindLabel(connection.kind)]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [search, state.connections]);
+
+  const selectedConnection = state.connections.find((connection) => connection.id === selectedId) ?? null;
+  const isEditing = mode === "edit";
+  const showForm = mode === "create" || isEditing || !selectedConnection;
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -71,37 +114,36 @@ export function CollectionManager() {
       return next;
     });
     setSubmitError("");
+    setTestMessage(null);
   };
 
-  useEffect(() => {
-    if (!selectedId && state.connections[0]) {
-      setSelectedId(state.connections[0].id);
-    }
-  }, [selectedId, state.connections]);
-
-  const resetCreate = () => {
+  const startCreate = () => {
+    setSelectedId("");
     setMode("create");
     setForm(emptyForm);
     setErrors({});
     setSubmitError("");
+    setTestMessage(null);
   };
 
   const startEdit = (connection: Connection) => {
+    setSelectedId(connection.id);
     setMode("edit");
     setErrors({});
     setSubmitError("");
+    setTestMessage(null);
     setForm({
       id: connection.id,
       name: connection.name,
       kind: connection.kind,
+      authMethod: connection.authMethod,
       host: connection.host,
       port: String(connection.port),
       username: connection.username,
-      database: connection.database,
-      environment: connection.environment,
-      readOnly: connection.readOnly,
-      favorite: connection.favorite ?? false,
       password: "",
+      database: connection.database,
+      readOnly: connection.readOnly,
+      color: connection.color,
     });
   };
 
@@ -109,7 +151,7 @@ export function CollectionManager() {
     const nextErrors: FormErrors = {};
 
     if (!form.name.trim()) {
-      nextErrors.name = "Name is required.";
+      nextErrors.name = "Connection name is required.";
     }
 
     if (!form.host.trim()) {
@@ -130,10 +172,71 @@ export function CollectionManager() {
     }
 
     if (!form.database.trim()) {
-      nextErrors.database = "Database is required.";
+      nextErrors.database = "Default database is required.";
     }
 
     return nextErrors;
+  };
+
+  const validateConnectionFields = () => {
+    const nextErrors: FormErrors = {};
+
+    if (!form.host.trim()) {
+      nextErrors.host = "Host is required.";
+    }
+
+    if (!form.port.trim()) {
+      nextErrors.port = "Port is required.";
+    } else {
+      const port = Number(form.port);
+      if (!Number.isInteger(port) || port <= 0) {
+        nextErrors.port = "Port must be a positive integer.";
+      }
+    }
+
+    if (!form.username.trim()) {
+      nextErrors.username = "User is required.";
+    }
+
+    if (!form.database.trim()) {
+      nextErrors.database = "Default database is required.";
+    }
+
+    return nextErrors;
+  };
+
+  const testConnection = async () => {
+    const nextErrors = validateConnectionFields();
+    setErrors((current) => ({ ...current, ...nextErrors }));
+    setSubmitError("");
+    setTestMessage(null);
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setIsTesting(true);
+
+    try {
+      const result = await state.testConnection({
+        id: form.id,
+        kind: form.kind,
+        authMethod: form.authMethod,
+        host: form.host.trim(),
+        port: Number(form.port),
+        username: form.username.trim(),
+        database: form.database.trim(),
+        password: form.password || undefined,
+      });
+      setTestMessage({ kind: "success", text: `Connection succeeded in ${result.durationMs}ms.` });
+    } catch (error) {
+      setTestMessage({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Connection test failed.",
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const submit = async () => {
@@ -144,29 +247,32 @@ export function CollectionManager() {
       return;
     }
 
-    const port = Number(form.port);
+    const input = {
+      name: form.name.trim(),
+      kind: form.kind,
+      authMethod: form.authMethod,
+      host: form.host.trim(),
+      port: Number(form.port),
+      username: form.username.trim(),
+      database: form.database.trim(),
+      readOnly: form.readOnly,
+      color: form.color,
+      favorite: false,
+      password: form.password || undefined,
+    };
+
     setIsSubmitting(true);
 
     try {
       if (mode === "create") {
-        await state.createConnection({
-          name: form.name,
-          kind: form.kind,
-          host: form.host,
-          port,
-          username: form.username,
-          database: form.database,
-          environment: form.environment,
-          readOnly: form.readOnly,
-          favorite: form.favorite,
-          password: form.password || undefined,
-        });
+        await state.createConnection(input);
         await state.refreshConnections();
         const latest = useAppStore.getState().connections.at(-1);
         if (latest) {
           setSelectedId(latest.id);
+          setMode("view");
         }
-        resetCreate();
+        setForm(emptyForm);
         return;
       }
 
@@ -177,19 +283,12 @@ export function CollectionManager() {
 
       await state.updateConnection({
         id: form.id,
-        name: form.name,
-        kind: form.kind,
-        host: form.host,
-        port,
-        username: form.username,
-        database: form.database,
-        environment: form.environment,
-        readOnly: form.readOnly,
-        favorite: form.favorite,
-        password: form.password || undefined,
+        ...input,
       });
       await state.refreshConnections();
       setSelectedId(form.id);
+      setMode("view");
+      setForm(emptyForm);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to save connection.");
     } finally {
@@ -198,226 +297,277 @@ export function CollectionManager() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] p-3 text-[var(--foreground)]">
-      <div className="mx-auto grid min-h-[calc(100vh-0.75rem)] max-w-[1600px] overflow-hidden border border-[var(--border)] bg-[#0f1114] xl:grid-cols-[minmax(0,1.4fr)_420px]">
-        <div className="border-r border-[var(--border)]">
-          <div className="flex flex-col gap-4 border-b border-[var(--border)] px-5 py-5 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted-foreground)]">Collection Manager</p>
-              <h1 className="mt-2 text-3xl font-semibold">Choose a database to work on</h1>
-              <p className="mt-2 max-w-2xl text-sm text-[var(--muted-foreground)]">
-                Create, edit, and organize saved connections before opening the per-connection query workspace.
-              </p>
-            </div>
-            <Button onClick={resetCreate}>
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <div className="grid min-h-screen grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r border-[var(--border)] bg-[#111317]">
+          <div className="border-b border-[var(--border)] p-4">
+            <Button className="w-full justify-center" onClick={startCreate}>
               <Plus className="size-4" />
               New Connection
             </Button>
-          </div>
-
-          <div className="border-b border-[var(--border)] px-5 py-3">
-            <div className="relative">
+            <div className="relative mt-4">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-              <Input className="pl-9" placeholder="Search connections" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Filter" />
             </div>
           </div>
 
-          <div className="grid gap-0 md:grid-cols-2 2xl:grid-cols-3">
-            {state.connections.map((connection) => (
-              <button
-                key={connection.id}
-                className={cn(
-                  "cursor-pointer border-b border-r border-[var(--border)] px-4 py-4 text-left transition-colors",
-                  selectedId === connection.id ? "bg-[rgba(94,106,210,0.08)]" : "bg-transparent hover:bg-[var(--panel-muted)]",
-                )}
-                onClick={() => setSelectedId(connection.id)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <div className="flex size-7 items-center justify-center border border-[var(--border)] bg-[var(--panel-muted)] text-[var(--accent)]">
-                        <Database className="size-3.5" />
-                      </div>
-                      <p className="truncate text-[14px] font-medium">{connection.name}</p>
-                    </div>
-                  </div>
-                  <Badge>{connection.environment}</Badge>
-                </div>
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
+              Saved {state.connections.length ? state.connections.length : ""}
+            </div>
 
-                <div className="mt-4 space-y-1 text-[12px] text-[var(--muted-foreground)]">
-                  <p>{kindLabel(connection.kind)}</p>
-                  <p>
-                    {connection.host}:{connection.port}
-                  </p>
-                  <p>{connection.username}</p>
-                  <p>{connection.database}</p>
-                </div>
-
-                <div className="mt-5 flex items-center justify-between">
-                  <div className="text-[11px] text-[var(--muted-foreground)]">
-                    {connection.readOnly ? "read-only" : "read / write"} · {connection.latencyMs}ms
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void state.openWorkspace(connection.id);
+            {state.connections.length === 0 ? (
+              <div className="border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5 text-sm text-[var(--muted-foreground)]">
+                Add a new connection to begin
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {filteredConnections.map((connection) => (
+                  <button
+                    key={connection.id}
+                    className={cn(
+                      "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors",
+                      selectedId === connection.id && mode !== "create"
+                        ? "bg-[var(--panel-elevated)]"
+                        : "hover:bg-[var(--panel-muted)]",
+                    )}
+                    onClick={() => {
+                      setSelectedId(connection.id);
+                      setMode("view");
+                      setErrors({});
+                      setSubmitError("");
                     }}
                   >
-                    Open
-                  </Button>
+                    <span className="mt-0.5 h-8 w-1 shrink-0" style={{ backgroundColor: connection.color }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{connection.name}</span>
+                      <span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">
+                        {connection.host}:{connection.port}
+                      </span>
+                    </span>
+                    <span className="rounded-[6px] bg-[var(--panel-elevated)] px-2 py-0.5 text-[10px] text-[var(--muted-foreground)]">
+                      {connection.kind}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <main className="flex min-h-screen items-center justify-center bg-[#08090b] p-8">
+          <div className="w-full max-w-[560px] border border-[var(--border)] bg-[var(--panel)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
+            {showForm ? (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h1 className="text-xl font-semibold">{isEditing ? "Edit Connection" : "New Connection"}</h1>
+                    <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                      Save a PostgreSQL or MySQL database connection.
+                    </p>
+                  </div>
+                  {selectedConnection ? (
+                    <Button variant="ghost" size="sm" onClick={() => setMode(selectedConnection ? "view" : "create")}>
+                      Cancel
+                    </Button>
+                  ) : null}
                 </div>
-              </button>
-            ))}
+
+                <div className="mt-6 space-y-4">
+                  {fieldLabel(
+                    "Connection Type",
+                    <Select
+                      value={form.kind}
+                      onChange={(event) => {
+                        const kind = event.target.value as Connection["kind"];
+                        setForm((current) => ({
+                          ...current,
+                          kind,
+                          port: current.port === defaultPort(current.kind) || !current.port ? defaultPort(kind) : current.port,
+                        }));
+                        setSubmitError("");
+                      }}
+                    >
+                      <option value="postgresql">PostgreSQL</option>
+                      <option value="mysql">MySQL</option>
+                    </Select>,
+                  )}
+
+                  {fieldLabel(
+                    "Authentication Method",
+                    <Select
+                      value={form.authMethod}
+                      onChange={(event) => setField("authMethod", event.target.value as Connection["authMethod"])}
+                    >
+                      <option value="username_password">Username / Password</option>
+                    </Select>,
+                  )}
+
+                  <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+                    {fieldLabel(
+                      "Host",
+                      <Input
+                        value={form.host}
+                        onChange={(event) => setField("host", event.target.value)}
+                        className={errors.host ? "border-[#b65252]" : undefined}
+                      />,
+                      errors.host,
+                    )}
+                    {fieldLabel(
+                      "Port",
+                      <Input
+                        value={form.port}
+                        onChange={(event) => setField("port", event.target.value)}
+                        className={errors.port ? "border-[#b65252]" : undefined}
+                      />,
+                      errors.port,
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {fieldLabel(
+                      "User",
+                      <Input
+                        value={form.username}
+                        onChange={(event) => setField("username", event.target.value)}
+                        className={errors.username ? "border-[#b65252]" : undefined}
+                      />,
+                      errors.username,
+                    )}
+                    {fieldLabel(
+                      "Password",
+                      <Input
+                        type="password"
+                        value={form.password}
+                        onChange={(event) => setField("password", event.target.value)}
+                      />,
+                    )}
+                  </div>
+
+                  {fieldLabel(
+                    "Default Database",
+                    <Input
+                      value={form.database}
+                      onChange={(event) => setField("database", event.target.value)}
+                      className={errors.database ? "border-[#b65252]" : undefined}
+                    />,
+                    errors.database,
+                  )}
+
+                  <label className="flex items-center gap-3 text-sm text-[var(--muted-foreground)]">
+                    <input type="checkbox" checked={form.readOnly} onChange={(event) => setField("readOnly", event.target.checked)} />
+                    Read Only Mode
+                  </label>
+
+                  <div>
+                    <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Connection Color</p>
+                    <div className="flex flex-wrap gap-2">
+                      {connectionColors.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          aria-label={`Use color ${color}`}
+                          className={cn(
+                            "size-7 border transition-transform",
+                            form.color === color ? "scale-110 border-white" : "border-transparent hover:scale-105",
+                          )}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setField("color", color)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {fieldLabel(
+                    "Connection Name",
+                    <Input
+                      value={form.name}
+                      onChange={(event) => setField("name", event.target.value)}
+                      className={errors.name ? "border-[#b65252]" : undefined}
+                    />,
+                    errors.name,
+                  )}
+
+                  {testMessage ? (
+                    <p className={cn("text-sm", testMessage.kind === "success" ? "text-[#7acb8f]" : "text-[#d97b7b]")}>
+                      {testMessage.text}
+                    </p>
+                  ) : null}
+
+                  {submitError ? <p className="text-sm text-[#d97b7b]">{submitError}</p> : null}
+
+                  <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-5">
+                    <Button variant="secondary" onClick={() => void testConnection()} disabled={isSubmitting || isTesting}>
+                      {isTesting ? "Testing..." : "Test"}
+                    </Button>
+                    <Button onClick={() => void submit()} disabled={isSubmitting}>
+                      {isSubmitting ? "Saving..." : isEditing ? "Save Changes" : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              selectedConnection && (
+                <>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div
+                        className="flex size-10 shrink-0 items-center justify-center text-white"
+                        style={{ backgroundColor: selectedConnection.color }}
+                      >
+                        <Database className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h1 className="truncate text-xl font-semibold">{selectedConnection.name}</h1>
+                        <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                          {selectedConnection.username}@{selectedConnection.host}:{selectedConnection.port}
+                        </p>
+                      </div>
+                    </div>
+                    <Button onClick={() => void state.openWorkspace(selectedConnection.id)}>Connect</Button>
+                  </div>
+
+                  <div className="mt-6 grid gap-3 text-sm">
+                    <div className="flex justify-between border-b border-[var(--border)] py-3">
+                      <span className="text-[var(--muted-foreground)]">Type</span>
+                      <span>{kindLabel(selectedConnection.kind)}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-[var(--border)] py-3">
+                      <span className="text-[var(--muted-foreground)]">Authentication</span>
+                      <span>{authMethodLabel(selectedConnection.authMethod)}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-[var(--border)] py-3">
+                      <span className="text-[var(--muted-foreground)]">Default Database</span>
+                      <span>{selectedConnection.database}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-[var(--border)] py-3">
+                      <span className="text-[var(--muted-foreground)]">Mode</span>
+                      <span>{selectedConnection.readOnly ? "Read only" : "Read / write"}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" onClick={() => startEdit(selectedConnection)}>
+                      <Pencil className="size-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void state.deleteConnection(selectedConnection.id);
+                        setSelectedId("");
+                        startCreate();
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                      Delete
+                    </Button>
+                  </div>
+                </>
+              )
+            )}
           </div>
-        </div>
-
-        <div className="bg-[var(--panel)] p-5">
-          <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-                {mode === "create" ? "New Connection" : "Edit Connection"}
-              </p>
-              <h2 className="mt-2 text-xl font-semibold">
-                {mode === "create" ? "Create connection" : form.name || "Update connection"}
-              </h2>
-            </div>
-            {selectedConnection ? (
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="icon" onClick={() => startEdit(selectedConnection)}>
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    if (selectedConnection) {
-                      void state.deleteConnection(selectedConnection.id);
-                      setSelectedId(state.connections.find((item) => item.id !== selectedConnection.id)?.id ?? "");
-                      resetCreate();
-                    }
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-5 space-y-4">
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Name</p>
-              <Input
-                value={form.name}
-                onChange={(event) => setField("name", event.target.value)}
-                className={errors.name ? "border-[#b65252]" : undefined}
-              />
-              {errors.name ? <p className="mt-2 text-xs text-[#d97b7b]">{errors.name}</p> : null}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Type</p>
-                <Select
-                  value={form.kind}
-                  onChange={(event) => {
-                    const kind = event.target.value as Connection["kind"];
-                    setForm((current) => ({
-                      ...current,
-                      kind,
-                      port: current.port === defaultPort(current.kind) || !current.port ? defaultPort(kind) : current.port,
-                    }));
-                    setSubmitError("");
-                  }}
-                >
-                  <option value="postgresql">PostgreSQL</option>
-                  <option value="mysql">MySQL</option>
-                </Select>
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Environment</p>
-                <Select
-                  value={form.environment}
-                  onChange={(event) => setField("environment", event.target.value as Connection["environment"])}
-                >
-                  <option value="development">Development</option>
-                  <option value="staging">Staging</option>
-                  <option value="production">Production</option>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Host</p>
-              <Input
-                value={form.host}
-                onChange={(event) => setField("host", event.target.value)}
-                className={errors.host ? "border-[#b65252]" : undefined}
-              />
-              {errors.host ? <p className="mt-2 text-xs text-[#d97b7b]">{errors.host}</p> : null}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Port</p>
-                <Input
-                  value={form.port}
-                  onChange={(event) => setField("port", event.target.value)}
-                  className={errors.port ? "border-[#b65252]" : undefined}
-                />
-                {errors.port ? <p className="mt-2 text-xs text-[#d97b7b]">{errors.port}</p> : null}
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">User</p>
-                <Input
-                  value={form.username}
-                  onChange={(event) => setField("username", event.target.value)}
-                  className={errors.username ? "border-[#b65252]" : undefined}
-                />
-                {errors.username ? <p className="mt-2 text-xs text-[#d97b7b]">{errors.username}</p> : null}
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Database</p>
-              <Input
-                value={form.database}
-                onChange={(event) => setField("database", event.target.value)}
-                className={errors.database ? "border-[#b65252]" : undefined}
-              />
-              {errors.database ? <p className="mt-2 text-xs text-[#d97b7b]">{errors.database}</p> : null}
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[var(--muted-foreground)]">Password</p>
-              <Input
-                type="password"
-                value={form.password}
-                onChange={(event) => setField("password", event.target.value)}
-              />
-            </div>
-
-            <label className="flex items-center gap-3 border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.readOnly}
-                onChange={(event) => setField("readOnly", event.target.checked)}
-              />
-              Mark as read-only
-            </label>
-
-            {submitError ? <p className="text-sm text-[#d97b7b]">{submitError}</p> : null}
-
-            <div className="flex gap-2 pt-2">
-              <Button onClick={() => void submit()} disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : mode === "create" ? "Create Connection" : "Save Changes"}
-              </Button>
-              <Button variant="secondary" onClick={resetCreate} disabled={isSubmitting}>
-                Reset
-              </Button>
-            </div>
-          </div>
-        </div>
+        </main>
       </div>
     </div>
   );

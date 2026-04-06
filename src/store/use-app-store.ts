@@ -4,6 +4,8 @@ import { getWindowConnectionId, getWindowScreen } from "@/lib/window-context";
 import type {
   Connection,
   ConnectionCreateInput,
+  ConnectionTestInput,
+  ConnectionTestResult,
   ConnectionUpdateInput,
   DesktopSnapshot,
   QueryHistoryItem,
@@ -35,6 +37,7 @@ interface AppState {
   refreshConnections: () => Promise<void>;
   createConnection: (input: ConnectionCreateInput) => Promise<void>;
   updateConnection: (input: ConnectionUpdateInput) => Promise<void>;
+  testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (id: string) => Promise<void>;
   setSidebarView: (view: SidebarView) => void;
   setSelectedSchema: (schema: string) => void;
@@ -239,15 +242,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  updateConnection: async (input) => {
-    const updated = await getDesktopApi().updateConnection(input);
-    set((state) => ({
-      ...state,
-      connections: state.connections.map((connection) => (connection.id === updated.id ? updated : connection)),
-    }));
-  },
+	  updateConnection: async (input) => {
+	    const updated = await getDesktopApi().updateConnection(input);
+	    set((state) => ({
+	      ...state,
+	      connections: state.connections.map((connection) => (connection.id === updated.id ? updated : connection)),
+	    }));
+	  },
 
-  deleteConnection: async (id) => {
+	  testConnection: async (input) => getDesktopApi().testConnection(input),
+	
+	  deleteConnection: async (id) => {
     await getDesktopApi().deleteConnection({ id });
     set((state) => ({
       ...state,

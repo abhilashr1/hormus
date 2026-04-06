@@ -2,12 +2,15 @@ import { Client } from "pg";
 import mysql from "mysql2/promise";
 import type {
   Connection,
+  ConnectionTestInput,
+  ConnectionTestResult,
   QueryResult,
   SchemaNode,
   TableDescription,
 } from "../src/shared/ipc.js";
 
 type ConnectionWithSecret = Connection & { password?: string };
+type TestConnectionWithSecret = ConnectionTestInput & { password?: string };
 
 function normalizeCell(value: unknown): unknown {
   if (value === null || value === undefined) {
@@ -86,6 +89,31 @@ async function queryPostgres(connection: ConnectionWithSecret, sql: string): Pro
   }
 }
 
+async function testPostgres(connection: TestConnectionWithSecret): Promise<ConnectionTestResult> {
+  const client = new Client({
+    host: connection.host,
+    port: connection.port || defaultPort(connection.kind),
+    user: connection.username,
+    password: connection.password,
+    database: connection.database,
+    application_name: "Hormus",
+    connectionTimeoutMillis: 8000,
+  });
+
+  const startedAt = Date.now();
+  await client.connect();
+
+  try {
+    await client.query("select 1");
+    return {
+      success: true,
+      durationMs: Date.now() - startedAt,
+    };
+  } finally {
+    await client.end();
+  }
+}
+
 async function queryMySql(connection: ConnectionWithSecret, sql: string): Promise<QueryResult> {
   const client = await mysql.createConnection({
     host: connection.host,
@@ -111,6 +139,28 @@ async function queryMySql(connection: ConnectionWithSecret, sql: string): Promis
       columns,
       rows: mapRows(lastRows),
       rowCount: lastRows.length,
+      durationMs: Date.now() - startedAt,
+    };
+  } finally {
+    await client.end();
+  }
+}
+
+async function testMySql(connection: TestConnectionWithSecret): Promise<ConnectionTestResult> {
+  const startedAt = Date.now();
+  const client = await mysql.createConnection({
+    host: connection.host,
+    port: connection.port || defaultPort(connection.kind),
+    user: connection.username,
+    password: connection.password,
+    database: connection.database,
+    connectTimeout: 8000,
+  });
+
+  try {
+    await client.ping();
+    return {
+      success: true,
       durationMs: Date.now() - startedAt,
     };
   } finally {
@@ -303,6 +353,10 @@ async function describeMySqlTable(connection: ConnectionWithSecret, schema: stri
 export async function runLiveQuery(connection: ConnectionWithSecret, sql: string) {
   assertReadAllowed(connection, sql);
   return connection.kind === "postgresql" ? queryPostgres(connection, sql) : queryMySql(connection, sql);
+}
+
+export async function testLiveConnection(connection: TestConnectionWithSecret) {
+  return connection.kind === "postgresql" ? testPostgres(connection) : testMySql(connection);
 }
 
 export async function listLiveSchemas(connection: ConnectionWithSecret) {

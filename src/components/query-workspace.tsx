@@ -42,13 +42,16 @@ export function QueryWorkspace() {
           <aside className="flex w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[#111317]">
             <div className="border-b border-[var(--border)] px-4 py-4">
               <div className="flex items-center gap-2">
-                <div className="flex size-6 items-center justify-center border border-[var(--border)] bg-[rgba(94,106,210,0.18)] text-[var(--accent)]">
+                <div
+                  className="flex size-6 items-center justify-center border border-[var(--border)] text-white"
+                  style={{ backgroundColor: activeConnection.color }}
+                >
                   <Database className="size-3.5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-[14px] font-semibold">{activeConnection.name}</p>
-                    <Badge>{activeConnection.environment}</Badge>
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: activeConnection.color }} />
                   </div>
                   <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--muted-foreground)]">
                     <span>{activeConnection.kind}</span>
@@ -140,7 +143,12 @@ export function QueryWorkspace() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Badge>{activeConnection.environment}</Badge>
+                <span
+                  className="h-6 rounded-[6px] px-2 text-[11px] leading-6 text-white"
+                  style={{ backgroundColor: activeConnection.color }}
+                >
+                  {activeConnection.readOnly ? "read only" : "read / write"}
+                </span>
                 <Button size="sm" onClick={() => void state.runTab(activeTab.id)} disabled={state.isRunningQuery}>
                   <Play className="size-4" />
                   {state.isRunningQuery ? "Running..." : "Run Query"}
