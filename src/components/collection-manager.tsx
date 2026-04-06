@@ -301,8 +301,8 @@ export function CollectionManager() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="grid min-h-screen grid-cols-[320px_minmax(0,1fr)]">
+    <div className="min-h-screen bg-[var(--background)] pt-[var(--window-titlebar-height)] text-[var(--foreground)]">
+      <div className="grid min-h-[calc(100vh-var(--window-titlebar-height))] grid-cols-[320px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-[var(--border)] bg-[#111317]">
           <div className="border-b border-[var(--border)] p-4">
             <Button className="w-full justify-center" onClick={startCreate}>
@@ -363,7 +363,7 @@ export function CollectionManager() {
           </ScrollArea>
         </aside>
 
-        <main className="flex min-h-screen items-center justify-center bg-[#08090b] p-8">
+        <main className="flex min-h-0 items-center justify-center bg-[#08090b] p-8">
           <Card className="w-full max-w-[560px] gap-0 rounded-lg p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
             {showForm ? (
               <>

@@ -1,12 +1,12 @@
 import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry, type ColDef } from "ag-grid-community";
+import { AllCommunityModule, ModuleRegistry, type CellClickedEvent, type ColDef, type SelectionChangedEvent } from "ag-grid-community";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { QueryResult } from "@/shared/ipc";
@@ -32,6 +32,7 @@ interface ResultsGridProps {
 }
 
 type ResultsPanelTab = "output" | "results";
+type ResultRow = QueryResult["rows"][number];
 
 function estimateColumnWidth(column: string, rows: QueryResult["rows"]) {
   const valueLengths = rows.slice(0, 100).map((row) => String(row[column] ?? "").length);
@@ -39,9 +40,23 @@ function estimateColumnWidth(column: string, rows: QueryResult["rows"]) {
   return Math.min(360, Math.max(52, maxLength * 8 + 28));
 }
 
+function valueToClipboardText(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function csvEscape(value: string) {
+  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function rowsToClipboardText(rows: ResultRow[], columns: string[]) {
+  return rows.map((row) => columns.map((column) => csvEscape(valueToClipboardText(row[column]))).join(",")).join("\n");
+}
+
 export function ResultsGrid({ result, error, queryText, outputHistory = [], isLoading, onPageChange }: ResultsGridProps) {
   const [activePanel, setActivePanel] = useState<ResultsPanelTab>("output");
   const [isResultsTabClosed, setIsResultsTabClosed] = useState(false);
+  const selectedRowsRef = useRef<ResultRow[]>([]);
+  const lastClickedCellRef = useRef<string | null>(null);
   const hasResults = Boolean(result && result.columns.length > 0);
   const showResultsTab = hasResults && !isResultsTabClosed;
   const totalRows = result?.rowCount ?? 0;
@@ -68,6 +83,11 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
     }
   }, [error, hasResults, result]);
 
+  useEffect(() => {
+    selectedRowsRef.current = [];
+    lastClickedCellRef.current = null;
+  }, [result]);
+
   const columnDefs = useMemo<ColDef[]>(
     () =>
       (result?.columns ?? []).map((column: string) => ({
@@ -87,55 +107,94 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
     : result
       ? `Returned ${totalRows.toLocaleString()} rows in ${result.durationMs}ms`
       : "Run a query to see output";
+  const copyResultsSelection = async (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (activePanel !== "results" || event.key.toLowerCase() !== "c" || (!event.metaKey && !event.ctrlKey)) {
+      return;
+    }
+
+    const selectedRows = selectedRowsRef.current;
+    const clipboardText =
+      selectedRows.length > 0
+        ? rowsToClipboardText(selectedRows, result?.columns ?? [])
+        : lastClickedCellRef.current;
+
+    if (clipboardText === null || clipboardText === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      await navigator.clipboard.writeText(clipboardText);
+    } catch {
+      // Clipboard writes can be denied by the host environment.
+    }
+  };
 
   return (
-    <Card className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-none py-0">
-      <div className="flex items-center justify-between px-3 py-2">
+    <Card
+      className="flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-none py-0"
+      onKeyDownCapture={(event) => void copyResultsSelection(event)}
+    >
+      <div className="flex h-11 items-end justify-between border-b border-[var(--border)] bg-[#101216] px-3">
         <Tabs value={activePanel} onValueChange={(value) => setActivePanel(value as ResultsPanelTab)} className="min-w-0">
-          <TabsList className="h-auto gap-1 rounded-none bg-transparent p-0">
-            <TabsTrigger
-              value="output"
-              className="h-8 rounded-md border-0 px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-[var(--panel-elevated)] data-[state=active]:text-white"
-            >
-              Output
-            </TabsTrigger>
-          {showResultsTab ? (
+          <TabsList className="h-auto gap-0 rounded-none bg-transparent p-0">
             <div
               className={cn(
-                "group inline-flex items-center rounded-md text-[13px] transition-colors",
-                activePanel === "results"
-                  ? "bg-[var(--panel-elevated)] text-white"
-                  : "text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
+                "group relative -mb-px inline-flex h-10 min-w-0 items-center border-r border-[var(--border)] text-[13px] transition-colors",
+                activePanel === "output"
+                  ? "z-10 border-x border-t border-b border-t-[var(--border)] border-b-white bg-[var(--card)] text-white after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-white after:content-['']"
+                  : "border-b border-b-[var(--border)] text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
               )}
             >
               <TabsTrigger
-                value="results"
-                className="h-8 rounded-r-none border-0 bg-transparent px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none"
+                value="output"
+                className="h-full justify-start truncate rounded-none border-0 bg-transparent px-4 text-[13px] hover:bg-transparent focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
               >
-                Results
+                Output
               </TabsTrigger>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Close Results tab"
-                onClick={() => {
-                  setIsResultsTabClosed(true);
-                  setActivePanel("output");
-                }}
-                className="mr-1 size-6 rounded-l-none text-inherit hover:bg-transparent hover:text-foreground focus-visible:ring-0"
-              >
-                <X className="size-3" />
-              </Button>
             </div>
-          ) : null}
+            {showResultsTab ? (
+              <div
+                className={cn(
+                  "group relative -mb-px inline-flex h-10 min-w-0 items-center border-r border-[var(--border)] text-[13px] transition-colors",
+                  activePanel === "results"
+                    ? "z-10 border-x border-t border-b border-t-[var(--border)] border-b-white bg-[var(--card)] text-white after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-white after:content-['']"
+                    : "border-b border-b-[var(--border)] text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
+                )}
+              >
+                <TabsTrigger
+                  value="results"
+                  className="h-full justify-start truncate rounded-none border-0 bg-transparent px-4 text-[13px] hover:bg-transparent focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
+                >
+                  Results
+                </TabsTrigger>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close Results tab"
+                  onClick={() => {
+                    setIsResultsTabClosed(true);
+                    setActivePanel("output");
+                  }}
+                  className="mr-2 size-6 rounded-none bg-transparent text-inherit hover:bg-[var(--panel-elevated)] hover:text-foreground focus-visible:ring-0"
+                >
+                  <X className="size-3" />
+                </Button>
+              </div>
+            ) : null}
           </TabsList>
         </Tabs>
-        <Badge variant={error ? "destructive" : "secondary"} className={error ? "border-red-500/30 bg-red-500/10 text-red-200" : undefined}>
+        <Badge
+          variant={error ? "destructive" : "secondary"}
+          className={cn(
+            "mb-2",
+            error ? "border-red-500/30 bg-red-500/10 text-red-200" : undefined,
+          )}
+        >
           {error ? "error" : result ? "complete" : "idle"}
         </Badge>
       </div>
-      <Separator />
       {activePanel === "output" ? (
         <ScrollArea className="min-h-0 flex-1">
           <div className="p-4">
@@ -223,7 +282,13 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
               columnDefs={columnDefs}
               animateRows
               overlayNoRowsTemplate="<span>No rows returned.</span>"
-              rowSelection={{ mode: "multiRow" }}
+              rowSelection={{ mode: "multiRow", enableClickSelection: false }}
+              onCellClicked={(event: CellClickedEvent<ResultRow>) => {
+                lastClickedCellRef.current = valueToClipboardText(event.value);
+              }}
+              onSelectionChanged={(event: SelectionChangedEvent<ResultRow>) => {
+                selectedRowsRef.current = event.api.getSelectedRows();
+              }}
               defaultColDef={{
                 sortable: true,
                 filter: false,

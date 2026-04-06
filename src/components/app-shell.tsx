@@ -8,6 +8,10 @@ export function AppShell() {
   const isBootstrapping = useAppStore((state) => state.isBootstrapping);
 
   useEffect(() => {
+    if (window.hormus && navigator.platform.toLowerCase().includes("mac")) {
+      document.documentElement.dataset.platform = "darwin";
+    }
+
     void useAppStore.getState().bootstrap();
   }, []);
 

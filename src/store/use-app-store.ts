@@ -25,6 +25,12 @@ interface QueryOutputEntry {
   ranAt: string;
 }
 
+interface CreateTabInput {
+  title?: string;
+  sql?: string;
+  run?: boolean;
+}
+
 interface AppState {
   currentScreen: AppScreen;
   connections: Connection[];
@@ -56,7 +62,7 @@ interface AppState {
   updateTabSelection: (id: string, selection: string) => void;
   renameTab: (id: string, title: string) => void;
   closeTab: (id: string) => Promise<void>;
-  createTab: () => void;
+  createTab: (input?: CreateTabInput) => Promise<void>;
   runTab: (id: string) => Promise<void>;
   runTabPage: (id: string, pageOffset: number) => Promise<void>;
 }
@@ -82,6 +88,11 @@ function ensureTabs(queryTabs: QueryTab[], activeTabId?: string) {
   };
 }
 
+function getDefaultSchemaName(schemas: SchemaNode[], preferredSchema?: string) {
+  const preferred = preferredSchema ? schemas.find((schema) => schema.name === preferredSchema) : undefined;
+  return preferred?.name ?? schemas.find((schema) => schema.name === "public")?.name ?? schemas[0]?.name ?? "";
+}
+
 function loadPersistedState() {
   if (typeof window === "undefined") {
     return null;
@@ -103,7 +114,7 @@ function persist(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "act
 
 const saved = loadPersistedState();
 
-async function loadWorkspaceData(connectionId: string, activeTabId: string) {
+async function loadWorkspaceData(connectionId: string, activeTabId: string, preferredSchema?: string) {
   const api = getDesktopApi();
   const [schemas, history, result] = await Promise.all([
     api.listSchemas(connectionId),
@@ -115,13 +126,13 @@ async function loadWorkspaceData(connectionId: string, activeTabId: string) {
     schemas,
     history,
     result,
-    selectedSchema: schemas[0]?.name ?? "",
+    selectedSchema: getDefaultSchemaName(schemas, preferredSchema),
   };
 }
 
-async function loadWorkspaceDataSafe(connectionId: string, activeTabId: string) {
+async function loadWorkspaceDataSafe(connectionId: string, activeTabId: string, preferredSchema?: string) {
   try {
-    const workspace = await loadWorkspaceData(connectionId, activeTabId);
+    const workspace = await loadWorkspaceData(connectionId, activeTabId, preferredSchema);
     return {
       ...workspace,
       queryError: null as string | null,
@@ -175,7 +186,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (screen === "workspace") {
       const workspace = activeConnectionId
-        ? await loadWorkspaceDataSafe(activeConnectionId, tabs.activeTabId)
+        ? await loadWorkspaceDataSafe(
+            activeConnectionId,
+            tabs.activeTabId,
+            snapshot.connections.find((connection) => connection.id === activeConnectionId)?.database,
+          )
         : { schemas: [], history: [], result: null, selectedSchema: "", queryError: null };
       set({
         ...nextState,
@@ -211,7 +226,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tabs = ensureTabs(state.queryTabs, state.activeTabId);
 
     set({ isBootstrapping: true });
-    const workspace = await loadWorkspaceDataSafe(connectionId, tabs.activeTabId);
+    const workspace = await loadWorkspaceDataSafe(
+      connectionId,
+      tabs.activeTabId,
+      state.connections.find((connection) => connection.id === connectionId)?.database,
+    );
 
     set((current) => ({
       ...current,
@@ -382,18 +401,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  createTab: () =>
+  createTab: async (input) => {
+    let tabId = "";
     set((state) => {
       const tab: QueryTab = {
         id: crypto.randomUUID(),
-        title: `Query ${state.queryTabs.length + 1}`,
-        sql: "",
+        title: input?.title ?? `Query ${state.queryTabs.length + 1}`,
+        sql: input?.sql ?? "",
         status: "idle",
       };
+      tabId = tab.id;
       const next = {
         ...state,
         queryTabs: [...state.queryTabs, tab],
         activeTabId: tab.id,
+        selectedSchema: getDefaultSchemaName(
+          state.schemas,
+          state.connections.find((connection) => connection.id === state.activeConnectionId)?.database,
+        ),
         result: null,
         queryError: null,
         lastRunQueryByTab: state.lastRunQueryByTab,
@@ -406,7 +431,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         sidebarView: next.sidebarView,
       });
       return next;
-    }),
+    });
+
+    if (input?.run && tabId) {
+      await get().runTab(tabId);
+    }
+  },
 
   runTab: async (id) => {
     const state = get();

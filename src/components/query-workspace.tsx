@@ -1,6 +1,5 @@
-import { ArrowLeft, ChevronDown, Command, Database, Play, Plus, Table2, X } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, ChevronDown, Command, Database, Play, Plus, Search, Table2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +11,49 @@ import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
 import { cn } from "@/lib/utils";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
+import type { Connection, SchemaNode } from "@/shared/ipc";
+
+type SchemaTable = SchemaNode["tables"][number];
+type TableContextMenu = {
+  x: number;
+  y: number;
+  schema: string;
+  table: SchemaTable;
+};
+
+function quoteIdentifier(kind: Connection["kind"], identifier: string) {
+  if (kind === "mysql") {
+    return `\`${identifier.replace(/`/g, "``")}\``;
+  }
+
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function quoteSqlString(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
+  return `${quoteIdentifier(kind, schema)}.${quoteIdentifier(kind, table)}`;
+}
+
+function buildViewTableSql(kind: Connection["kind"], schema: string, table: string) {
+  return `select * from ${qualifiedTableName(kind, schema, table)};`;
+}
+
+function buildDescribeTableSql(kind: Connection["kind"], schema: string, table: string) {
+  if (kind === "mysql") {
+    return `describe ${qualifiedTableName(kind, schema, table)};`;
+  }
+
+  return [
+    "select column_name, data_type, is_nullable, column_default",
+    "from information_schema.columns",
+    `where table_schema = ${quoteSqlString(schema)}`,
+    `  and table_name = ${quoteSqlString(table)}`,
+    "order by ordinal_position;",
+  ].join("\n");
+}
 
 export function QueryWorkspace() {
   const state = useAppStore();
@@ -19,13 +61,47 @@ export function QueryWorkspace() {
   const activeTab = selectActiveTab(state);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [objectSearch, setObjectSearch] = useState("");
+  const [isObjectSearchVisible, setIsObjectSearchVisible] = useState(false);
+  const [tableContextMenu, setTableContextMenu] = useState<TableContextMenu | null>(null);
+  const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
+  const tableObjects = selectedSchemaNode?.tables ?? [];
+  const filteredTableObjects = useMemo(() => {
+    const needle = objectSearch.trim().toLowerCase();
+    if (!needle) {
+      return tableObjects;
+    }
+
+    return tableObjects.filter((table) =>
+      [table.name, `${table.columns} columns`, table.rowCount].join(" ").toLowerCase().includes(needle),
+    );
+  }, [objectSearch, tableObjects]);
+
+  useEffect(() => {
+    if (!tableContextMenu) {
+      return undefined;
+    }
+
+    const closeMenu = () => setTableContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [tableContextMenu]);
 
   if (!activeConnection || !activeTab) {
     return null;
   }
 
-  const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
-  const tableObjects = selectedSchemaNode?.tables ?? [];
+  const canRunQuery = activeTab.sql.trim().length > 0 && !state.isRunningQuery;
   const startRenamingTab = (tab: typeof activeTab) => {
     setRenamingTabId(tab.id);
     setRenameDraft(tab.title);
@@ -37,9 +113,26 @@ export function QueryWorkspace() {
     setRenamingTabId(null);
     setRenameDraft("");
   };
+  const openTableQuery = async (schema: string, table: SchemaTable, action: "view" | "describe") => {
+    if (!schema) {
+      return;
+    }
+
+    setTableContextMenu(null);
+    const sql =
+      action === "view"
+        ? buildViewTableSql(activeConnection.kind, schema, table.name)
+        : buildDescribeTableSql(activeConnection.kind, schema, table.name);
+
+    await state.createTab({
+      title: action === "view" ? `View ${table.name}` : `Describe ${table.name}`,
+      sql,
+      run: true,
+    });
+  };
 
   return (
-    <div className="h-screen overflow-hidden bg-[var(--background)] p-3 text-[var(--foreground)]">
+    <div className="h-screen overflow-hidden bg-[var(--background)] px-3 pb-3 pt-[calc(var(--window-titlebar-height)+0.75rem)] text-[var(--foreground)]">
       <Card className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none bg-[#0f1114] py-0">
         <aside className="hidden w-[68px] shrink-0 border-r border-[var(--border)] bg-[#0b0c0f] lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-4">
           <div className="flex flex-col items-center gap-3">
@@ -54,7 +147,12 @@ export function QueryWorkspace() {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1">
-          <aside className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[#111317]">
+          <aside
+            className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[#111317]"
+            style={{
+              background: `linear-gradient(180deg, color-mix(in srgb, ${activeConnection.color} 34%, #111317) 0%, color-mix(in srgb, ${activeConnection.color} 18%, #111317) 55%, color-mix(in srgb, ${activeConnection.color} 10%, #111317) 100%)`,
+            }}
+          >
             <div className="border-b border-[var(--border)] px-4 py-4">
               <div className="flex items-center gap-2">
                 <div
@@ -97,9 +195,29 @@ export function QueryWorkspace() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="mt-2">
-                <Input placeholder="Search tables and objects" />
-              </div>
+              {isObjectSearchVisible ? (
+                <div className="mt-2">
+                  <Input
+                    autoFocus
+                    value={objectSearch}
+                    onChange={(event) => setObjectSearch(event.target.value)}
+                    placeholder="Search tables and objects"
+                  />
+                </div>
+              ) : (
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Search tables and objects"
+                    className="size-8"
+                    onClick={() => setIsObjectSearchVisible(true)}
+                  >
+                    <Search className="size-4" />
+                  </Button>
+                </div>
+              )}
             </div>
 
             <ScrollArea className="min-h-0 flex-1">
@@ -112,23 +230,38 @@ export function QueryWorkspace() {
                   <div>
                     <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Tables</div>
                     <div className="space-y-0.5">
-                      {tableObjects.map((table) => (
-                        <Button
-                          key={table.name}
-                          type="button"
-                          variant="ghost"
-                          className="h-auto w-full justify-between rounded-md px-2.5 py-2 text-left"
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
-                            <div className="min-w-0">
-                              <p className="truncate text-[13px] font-medium">{table.name}</p>
-                              <p className="text-[11px] text-[var(--muted-foreground)]">{table.columns} columns</p>
+                      {filteredTableObjects.length > 0 ? (
+                        filteredTableObjects.map((table) => (
+                          <Button
+                            key={table.name}
+                            type="button"
+                            variant="ghost"
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              setTableContextMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                schema: selectedSchemaNode?.name ?? state.selectedSchema,
+                                table,
+                              });
+                            }}
+                            className="h-auto w-full justify-between rounded-md px-2.5 py-2 text-left"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] font-medium">{table.name}</p>
+                                <p className="text-[11px] text-[var(--muted-foreground)]">{table.columns} columns</p>
+                              </div>
                             </div>
-                          </div>
-                          <span className="pl-2 text-[11px] text-[var(--muted-foreground)]">{table.rowCount || " "}</span>
-                        </Button>
-                      ))}
+                            <span className="pl-2 text-[11px] text-[var(--muted-foreground)]">{table.rowCount || " "}</span>
+                          </Button>
+                        ))
+                      ) : (
+                        <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
+                          {objectSearch.trim() ? "No matching tables." : "No tables loaded yet."}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -167,20 +300,21 @@ export function QueryWorkspace() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="h-6 rounded-md px-2 text-[11px]">
-                  {activeConnection.readOnly ? "read only" : "read / write"}
-                </Badge>
-                <Button size="sm" onClick={() => void state.runTab(activeTab.id)} disabled={state.isRunningQuery}>
-                  <Play className="size-4" />
+                <Button
+                  onClick={() => void state.runTab(activeTab.id)}
+                  disabled={!canRunQuery}
+                  className="text-xs [&_svg]:size-3"
+                >
+                  <Play />
                   {state.isRunningQuery ? "Running..." : "Run Query"}
                 </Button>
               </div>
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center gap-1 border-b border-[var(--border)] px-3 py-2">
+              <div className="flex h-11 items-end border-b border-[var(--border)] bg-[#101216] px-3">
                 <Tabs value={activeTab.id} onValueChange={(value) => void state.setActiveTab(value)} className="min-w-0 flex-1">
-                  <TabsList className="h-auto max-w-full justify-start gap-1 overflow-hidden rounded-none bg-transparent p-0">
+                  <TabsList className="h-auto max-w-full justify-start gap-0 overflow-visible rounded-none bg-transparent p-0">
                     {state.queryTabs.map((tab) => (
                       <div
                         key={tab.id}
@@ -189,10 +323,10 @@ export function QueryWorkspace() {
                           startRenamingTab(tab);
                         }}
                         className={cn(
-                          "group inline-flex min-w-0 items-center rounded-md text-[13px] transition-colors",
+                          "group relative -mb-px inline-flex h-10 min-w-0 items-center border-r border-[var(--border)] text-[13px] transition-colors",
                           tab.id === activeTab.id
-                            ? "bg-[var(--panel-elevated)] text-white"
-                            : "text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
+                            ? "z-10 border-x border-t border-b border-t-[var(--border)] border-b-white bg-[#0f1114] text-white after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-white after:content-['']"
+                            : "border-b border-b-[var(--border)] text-muted-foreground hover:bg-[var(--panel-muted)] hover:text-foreground",
                         )}
                       >
                         {renamingTabId === tab.id ? (
@@ -211,7 +345,7 @@ export function QueryWorkspace() {
                               }
                             }}
                             onClick={(event) => event.stopPropagation()}
-                            className="h-7 w-[160px] rounded-md text-[13px]"
+                            className="h-7 w-[160px] rounded-none border-0 bg-transparent text-[13px] focus-visible:ring-0"
                           />
                         ) : (
                           <TabsTrigger
@@ -220,7 +354,7 @@ export function QueryWorkspace() {
                               event.preventDefault();
                               startRenamingTab(tab);
                             }}
-                            className="h-8 max-w-[180px] justify-start truncate rounded-r-none border-0 bg-transparent px-3 text-[13px] focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none"
+                            className="h-full max-w-[180px] justify-start truncate rounded-none border-0 bg-transparent px-4 text-[13px] hover:bg-transparent focus-visible:ring-0 data-[state=active]:bg-transparent data-[state=active]:text-inherit data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
                           >
                             <span className="truncate">{tab.title}</span>
                           </TabsTrigger>
@@ -234,7 +368,7 @@ export function QueryWorkspace() {
                             event.stopPropagation();
                             void state.closeTab(tab.id);
                           }}
-                          className="mr-1 size-6 rounded-l-none text-inherit hover:bg-transparent hover:text-foreground focus-visible:ring-0"
+                          className="mr-2 size-6 rounded-none bg-transparent text-inherit hover:bg-[var(--panel-elevated)] hover:text-foreground focus-visible:ring-0"
                         >
                           <X className="size-3" />
                         </Button>
@@ -242,19 +376,9 @@ export function QueryWorkspace() {
                     ))}
                   </TabsList>
                 </Tabs>
-                <Button size="icon" variant="ghost" onClick={state.createTab}>
+                <Button size="icon" variant="ghost" onClick={() => void state.createTab()} className="mb-1 size-8 rounded-none">
                   <Plus className="size-4" />
                 </Button>
-              </div>
-
-              <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <Badge>⌘ Enter run</Badge>
-                  <Badge>{state.selectedSchema || "schema"}</Badge>
-                </div>
-                <div className="text-[11px] text-[var(--muted-foreground)]">
-                  {activeTab.lastRunAt ? `Last run ${activeTab.lastRunAt}` : "Not run yet"}
-                </div>
               </div>
 
               <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
@@ -264,7 +388,11 @@ export function QueryWorkspace() {
                       value={activeTab.sql}
                       onChange={(next) => state.updateTabSql(activeTab.id, next)}
                       onSelectionChange={(selection) => state.updateTabSelection(activeTab.id, selection)}
-                      onRun={() => void state.runTab(activeTab.id)}
+                      onRun={() => {
+                        if (canRunQuery) {
+                          void state.runTab(activeTab.id);
+                        }
+                      }}
                     />
                   </div>
                 </ResizablePanel>
@@ -286,6 +414,32 @@ export function QueryWorkspace() {
           </main>
         </div>
       </Card>
+      {tableContextMenu ? (
+        <Card
+          className="fixed z-50 w-44 gap-0 rounded-md border border-[var(--border)] bg-[var(--popover)] p-1 py-1 shadow-[0_16px_48px_rgba(0,0,0,0.45)]"
+          style={{ left: tableContextMenu.x, top: tableContextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start rounded-[4px]"
+            onClick={() => void openTableQuery(tableContextMenu.schema, tableContextMenu.table, "view")}
+          >
+            View
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start rounded-[4px]"
+            onClick={() => void openTableQuery(tableContextMenu.schema, tableContextMenu.table, "describe")}
+          >
+            Describe
+          </Button>
+        </Card>
+      ) : null}
     </div>
   );
 }
