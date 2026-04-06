@@ -1,0 +1,43 @@
+{
+  "name": "hormus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:renderer": "vite",
+    "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
+    "build:renderer": "tsc -b && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "preview": "vite preview",
+    "start:electron": "electron dist-electron/electron/main.js"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "ag-grid-community": "^33.3.2",
+    "ag-grid-react": "^33.3.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.511.0",
+    "mysql2": "^3.20.0",
+    "pg": "^8.20.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.3.0",
+    "zod": "^3.24.4",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.7",
+    "@types/node": "^24.0.1",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.2",
+    "autoprefixer": "^10.4.21",
+    "electron": "^35.1.5",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}
