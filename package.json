@@ -2,16 +2,59 @@
   "name": "hormus",
   "productName": "Hormus - Database Client",
   "version": "0.1.0",
+  "description": "Developer-first desktop database client.",
+  "author": "Hormus",
   "private": true,
   "type": "module",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
     "dev:renderer": "vite",
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "build:renderer": "tsc -b && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
     "preview": "vite preview",
     "start:electron": "electron dist-electron/electron/main.js"
+  },
+  "build": {
+    "appId": "com.hormus.databaseclient",
+    "productName": "Hormus - Database Client",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "hormus.png",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "category": "Development",
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -45,6 +88,7 @@
     "@vitejs/plugin-react": "^4.5.2",
     "autoprefixer": "^10.4.21",
     "electron": "^35.1.5",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.5.4",
     "tailwindcss": "^4.1.7",
     "typescript": "^5.8.3",

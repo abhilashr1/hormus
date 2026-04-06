@@ -20,8 +20,12 @@ const APP_NAME = "Hormus - Database Client";
 
 app.setName(APP_NAME);
 
+function getAppRoot() {
+  return app.isPackaged ? app.getAppPath() : process.cwd();
+}
+
 function getAppIcon() {
-  return nativeImage.createFromPath(path.join(process.cwd(), "hormus.png"));
+  return nativeImage.createFromPath(path.join(getAppRoot(), "hormus.png"));
 }
 
 function getRendererUrl() {
@@ -29,7 +33,7 @@ function getRendererUrl() {
     return process.env.VITE_DEV_SERVER_URL;
   }
 
-  return `file://${path.join(process.cwd(), "dist", "index.html")}`;
+  return `file://${path.join(getAppRoot(), "dist", "index.html")}`;
 }
 
 function buildRendererUrl(screen: "collection-manager" | "workspace", connectionId?: string) {
@@ -42,7 +46,7 @@ function buildRendererUrl(screen: "collection-manager" | "workspace", connection
 }
 
 function resolvePreloadPath() {
-  return path.join(process.cwd(), "dist-electron", "electron", "preload.cjs");
+  return path.join(getAppRoot(), "dist-electron", "electron", "preload.cjs");
 }
 
 function getMaximizedWindowBounds() {

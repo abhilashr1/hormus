@@ -1,24 +1,89 @@
 # Hormus
 
-Phase 1 desktop scaffold for a developer-first database client based on [`docs/PRODUCT_REQUIEMENTS.md`](./docs/PRODUCT_REQUIEMENTS.md).
+Hormus is a developer-first Electron database client for PostgreSQL and MySQL.
 
 ## Included
 
-- Bun/Vite React + TypeScript scaffold
-- Electron main + preload foundation
+- Vite React + TypeScript renderer
+- Electron main + preload process
 - Zod-validated IPC contract shared between renderer and main process
 - Tailwind setup with a shadcn-style component layer
 - Linear-inspired desktop UI shell
 - Live Electron backend for PostgreSQL and MySQL connections
 - Secure local credential persistence via Electron storage
 - Renderer state hydrated through desktop API instead of direct mock imports
+- Electron Builder packaging for macOS, Windows, and Linux
 
-## Run
+## Development
 
-1. Install dependencies with `bun install` or `npm install`
-2. Run the renderer with `bun run dev` or `npm run dev`
-3. Build both renderer and Electron entrypoints with `npm run build`
-4. Launch Electron against the built output with `npm run start:electron`
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the renderer dev server:
+
+```bash
+npm run dev
+```
+
+Build the renderer and Electron entrypoints:
+
+```bash
+npm run build
+```
+
+Launch Electron against the built output:
+
+```bash
+npm run start:electron
+```
+
+## Local Release Builds
+
+Build distributables for the current platform:
+
+```bash
+npm run dist
+```
+
+Build a platform-specific release:
+
+```bash
+npm run dist:mac
+npm run dist:win
+npm run dist:linux
+```
+
+Release output is written to `release/`, which is intentionally ignored by Git.
+
+Expected artifacts:
+
+- macOS: `.dmg` and `.zip`
+- Windows: NSIS `.exe`
+- Linux: `.AppImage` and `.deb`
+
+macOS builds use `build/icon.icns`, Windows builds use `build/icon.ico`, and Linux builds use `build/icon.png`.
+
+## GitHub Releases
+
+The release workflow in `.github/workflows/release.yml` runs when a version tag is pushed:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions builds on macOS, Windows, and Ubuntu runners, then uploads the generated installers to the GitHub Release for that tag.
+
+## Signing Notes
+
+Current builds are unsigned except for macOS ad-hoc signing done by Electron Builder. This is usable for local testing and early internal downloads, but public releases should add:
+
+- Apple Developer ID signing and notarization for macOS
+- Authenticode signing for Windows
+- Linux signing or checksum publishing if needed
 
 ## Notes
 
