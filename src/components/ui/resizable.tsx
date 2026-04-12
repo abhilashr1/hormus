@@ -2,13 +2,33 @@ import { GripVertical } from "lucide-react";
 import * as ResizablePrimitive from "react-resizable-panels";
 import { cn } from "@/lib/utils";
 
+type ResizablePanelGroupProps = React.HTMLAttributes<HTMLDivElement> & {
+  direction?: "horizontal" | "vertical";
+  orientation?: "horizontal" | "vertical";
+  autoSaveId?: string;
+  id?: string;
+  keyboardResizeBy?: number | null;
+  onLayout?: (sizes: number[]) => void;
+  storage?: {
+    getItem: (name: string) => string | null;
+    setItem: (name: string, value: string) => void;
+  };
+  tagName?: keyof React.JSX.IntrinsicElements;
+};
+
 function ResizablePanelGroup({
   className,
+  direction,
+  orientation,
   ...props
-}: React.ComponentProps<typeof ResizablePrimitive.Group>) {
+}: ResizablePanelGroupProps) {
+  const PanelGroup = ResizablePrimitive.Group as React.ComponentType<any>;
+  const panelOrientation = orientation ?? direction ?? "horizontal";
+
   return (
-    <ResizablePrimitive.Group
-      className={cn("flex h-full w-full data-[panel-group-direction=vertical]:flex-col", className)}
+    <PanelGroup
+      orientation={panelOrientation}
+      className={cn("flex h-full w-full", panelOrientation === "vertical" ? "flex-col" : "flex-row", className)}
       {...props}
     />
   );

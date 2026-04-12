@@ -183,12 +183,15 @@ export function QueryWorkspace() {
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--background)] px-3 pb-3 pt-[calc(var(--window-titlebar-height)+0.75rem)] text-[var(--foreground)]">
-      <Card className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none bg-[#0f1114] py-0">
+      <Card
+        className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none border border-white/10 py-0 backdrop-blur-sm"
+        style={{ backgroundColor: "rgba(15, 17, 20, 0.82)" }}
+      >
         <div className="flex min-h-0 min-w-0 flex-1">
           <aside
-            className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[#111317]"
+            className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-[var(--border)] backdrop-blur-sm"
             style={{
-              background: `linear-gradient(180deg, color-mix(in srgb, ${activeConnection.color} 34%, #111317) 0%, color-mix(in srgb, ${activeConnection.color} 18%, #111317) 55%, color-mix(in srgb, ${activeConnection.color} 10%, #111317) 100%)`,
+              background: `linear-gradient(180deg, color-mix(in srgb, ${activeConnection.color} 32%, rgba(17, 19, 23, 0.8)) 0%, color-mix(in srgb, ${activeConnection.color} 16%, rgba(17, 19, 23, 0.76)) 55%, rgba(17, 19, 23, 0.72) 100%)`,
             }}
           >
             <div className="border-b border-[var(--border)] px-4 py-4">
@@ -334,7 +337,10 @@ export function QueryWorkspace() {
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex h-11 items-end border-b border-[var(--border)] bg-[#101216] px-3">
+              <div
+                className="flex h-11 items-end border-b border-[var(--border)] px-3 backdrop-blur-sm"
+                style={{ backgroundColor: "rgba(16, 18, 22, 0.78)" }}
+              >
                 <Tabs value={activeTab.id} onValueChange={(value) => void state.setActiveTab(value)} className="min-w-0 flex-1">
                   <TabsList className="h-auto max-w-full justify-start gap-0 overflow-visible rounded-none bg-transparent p-0">
                     {state.queryTabs.map((tab) => (
@@ -413,7 +419,7 @@ export function QueryWorkspace() {
                 </Button>
               </div>
 
-              <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+              <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
                 <ResizablePanel defaultSize="50%" minSize="25%" maxSize="80%" className="min-h-[160px]">
                   <div className="h-full p-3">
                     <QueryEditor
@@ -439,7 +445,11 @@ export function QueryWorkspace() {
 
                 <ResizableHandle withHandle className="bg-[var(--border)]" />
 
-                <ResizablePanel minSize="20%" className="min-h-[180px] overflow-hidden bg-[var(--panel)]">
+                <ResizablePanel
+                  minSize="20%"
+                  className="min-h-[180px] overflow-hidden backdrop-blur-sm"
+                  style={{ backgroundColor: "rgba(17, 19, 23, 0.78)" }}
+                >
                   <ResultsGrid
                     result={state.result ?? undefined}
                     error={state.queryError ?? undefined}

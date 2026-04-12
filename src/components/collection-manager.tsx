@@ -1,6 +1,7 @@
-import { Database, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Database, GripVertical, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { getRandomAppBackground } from "@/assets/backgrounds";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,6 +81,10 @@ export function CollectionManager() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testMessage, setTestMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(360);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const activeBackground = useMemo(() => getRandomAppBackground(), []);
 
   const filteredConnections = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -96,8 +101,37 @@ export function CollectionManager() {
   }, [search, state.connections]);
 
   const selectedConnection = state.connections.find((connection) => connection.id === selectedId) ?? null;
+  const isCreating = mode === "create";
   const isEditing = mode === "edit";
-  const showForm = mode === "create" || isEditing || !selectedConnection;
+  const showForm = isCreating || isEditing;
+
+  useEffect(() => {
+    if (!isResizingSidebar) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event: MouseEvent) => {
+      setSidebarWidth(Math.min(480, Math.max(280, event.clientX)));
+    };
+
+    const stopResizing = () => {
+      setIsResizingSidebar(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", stopResizing);
+
+    return () => {
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", stopResizing);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isResizingSidebar]);
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -115,6 +149,7 @@ export function CollectionManager() {
   };
 
   const startCreate = () => {
+    setIsSidebarVisible(true);
     setSelectedId("");
     setMode("create");
     setForm(emptyForm);
@@ -124,6 +159,7 @@ export function CollectionManager() {
   };
 
   const startEdit = (connection: Connection) => {
+    setIsSidebarVisible(true);
     setSelectedId(connection.id);
     setMode("edit");
     setErrors({});
@@ -293,85 +329,138 @@ export function CollectionManager() {
     }
   };
 
+  const closeMainPanel = () => {
+    setSelectedId("");
+    setMode("view");
+    setErrors({});
+    setSubmitError("");
+    setTestMessage(null);
+  };
+
   return (
-    <div className="min-h-screen bg-[var(--background)] pt-[var(--window-titlebar-height)] text-[var(--foreground)]">
-      <div className="grid min-h-[calc(100vh-var(--window-titlebar-height))] grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r border-[var(--border)] bg-[#111317]">
-          <div className="border-b border-[var(--border)] p-4">
-            <Button className="w-full justify-center" onClick={startCreate}>
-              <Plus className="size-4" />
-              New Connection
-            </Button>
-            <div className="relative mt-4">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Filter" />
-            </div>
-          </div>
+    <div
+      className="min-h-screen bg-[var(--background)] pt-[var(--window-titlebar-height)] text-[13px] text-[var(--foreground)]"
+      style={{
+        backgroundImage: `linear-gradient(rgba(8, 9, 11, 0.72), rgba(8, 9, 11, 0.84)), url(${activeBackground.imageUrl})`,
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: "cover",
+      }}
+    >
+      <div className="flex min-h-[calc(100vh-var(--window-titlebar-height))]">
+        {isSidebarVisible ? (
+          <>
+            <aside
+              className="flex min-h-0 shrink-0 overflow-hidden border-r border-[var(--border)] bg-[#111317]/80 backdrop-blur-sm"
+              style={{ width: sidebarWidth }}
+            >
+              <div className="flex h-full min-h-0 w-full flex-col">
+                <div className="border-b border-[var(--border)] p-4">
+                  <div className="flex items-center">
+                    <Button
+                      className={cn(
+                        "w-full justify-center",
+                        isCreating ? "border border-white/12 bg-white text-black hover:bg-white/90" : undefined,
+                      )}
+                      onClick={startCreate}
+                    >
+                      <Plus className="size-4" />
+                      New Connection
+                    </Button>
+                  </div>
+                  <div className="relative mt-4">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Filter" />
+                  </div>
+                </div>
 
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="p-4">
-            <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
-              Saved {state.connections.length ? state.connections.length : ""}
-            </div>
+                <ScrollArea className="min-h-0 flex-1">
+                  <div className="p-4">
+                    <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
+                      Saved {state.connections.length ? state.connections.length : ""}
+                    </div>
 
-            {state.connections.length === 0 ? (
-              <Card className="border-dashed px-4 py-5 text-sm text-muted-foreground">
-                Add a new connection to begin
-              </Card>
-            ) : (
-              <div className="space-y-1">
-                {filteredConnections.map((connection) => (
-                  <Button
-                    key={connection.id}
-                    type="button"
-                    variant="ghost"
-                    className={cn(
-                      "h-auto w-full justify-start rounded-md px-3 py-3 text-left",
-                      selectedId === connection.id && mode !== "create"
-                        ? "bg-[var(--panel-elevated)]"
-                        : undefined,
+                    {state.connections.length === 0 ? (
+                      <Card className="border-dashed px-4 py-5 text-[13px] text-muted-foreground">
+                        Add a new connection to begin
+                      </Card>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredConnections.map((connection) => (
+                          <Button
+                            key={connection.id}
+                            type="button"
+                            variant="ghost"
+                            className={cn(
+                              "h-auto w-full justify-start rounded-md px-3 py-3 text-left",
+                              selectedId === connection.id && mode !== "create"
+                                ? "bg-[var(--panel-elevated)]"
+                                : undefined,
+                            )}
+                            onClick={() => {
+                              setSelectedId(connection.id);
+                              setMode("view");
+                              setErrors({});
+                              setSubmitError("");
+                            }}
+                            >
+                              <span className="mt-0.5 h-8 w-1 shrink-0" style={{ backgroundColor: connection.color }} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium">{connection.name}</span>
+                              <span className="mt-1 block truncate text-[11px] text-[var(--muted-foreground)]">
+                                {connection.host}:{connection.port}
+                              </span>
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
                     )}
-                    onClick={() => {
-                      setSelectedId(connection.id);
-                      setMode("view");
-                      setErrors({});
-                      setSubmitError("");
-                    }}
-                  >
-                    <span className="mt-0.5 h-8 w-1 shrink-0" style={{ backgroundColor: connection.color }} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{connection.name}</span>
-                      <span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">
-                        {connection.host}:{connection.port}
-                      </span>
-                    </span>
-                    <span className="rounded-[6px] bg-[var(--panel-elevated)] px-2 py-0.5 text-[10px] text-[var(--muted-foreground)]">
-                      {connection.kind}
-                    </span>
-                  </Button>
-                ))}
+                  </div>
+                </ScrollArea>
               </div>
-            )}
-            </div>
-          </ScrollArea>
-        </aside>
+            </aside>
 
-        <main className="flex min-h-0 items-center justify-center bg-[#08090b] p-8">
-          <Card className="w-full max-w-[560px] gap-0 rounded-lg p-6 shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
-            {showForm ? (
-              <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              className="group relative w-0 shrink-0 cursor-col-resize"
+              onMouseDown={() => setIsResizingSidebar(true)}
+            >
+              <div className="absolute inset-y-0 left-0 w-px -translate-x-1/2 bg-white/12 transition-colors group-hover:bg-white/20" />
+              <div className="absolute left-0 top-1/2 flex h-10 w-3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111317]/95 text-[var(--muted-foreground)] shadow-[0_10px_24px_rgba(0,0,0,0.35)]">
+                <GripVertical className="size-3" />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex w-14 shrink-0 items-start justify-center pt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10 rounded-full border border-white/10 bg-[#111317]/80 backdrop-blur-sm"
+              aria-label="Open sidebar"
+              onClick={() => setIsSidebarVisible(true)}
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
+        )}
+
+        <main className="flex min-h-0 flex-1 items-center justify-center bg-transparent p-8">
+          {showForm ? (
+            <Card className="w-full max-w-[560px] gap-0 rounded-lg border border-white/10 bg-[#0c0e11]/88 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.42)] backdrop-blur-md">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h1 className="text-xl font-semibold">{isEditing ? "Edit Connection" : "New Connection"}</h1>
-                    <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                  <div className="min-w-0">
+                    <h1 className="text-[18px] font-semibold">{isEditing ? "Edit Connection" : "New Connection"}</h1>
+                    <p className="mt-2 text-[13px] text-[var(--muted-foreground)]">
                       Save a PostgreSQL or MySQL database connection.
                     </p>
                   </div>
-                  {selectedConnection ? (
-                    <Button variant="ghost" size="sm" onClick={() => setMode(selectedConnection ? "view" : "create")}>
-                      Cancel
-                    </Button>
-                  ) : null}
+                  <Button type="button" variant="ghost" size="icon" aria-label="Close panel" onClick={closeMainPanel}>
+                    <X className="size-4" />
+                  </Button>
                 </div>
 
                 <div className="mt-6 space-y-4">
@@ -468,13 +557,13 @@ export function CollectionManager() {
                     errors.database,
                   )}
 
-                  <Label className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Label className="flex items-center gap-3 text-[13px] text-muted-foreground">
                     <Checkbox checked={form.readOnly} onCheckedChange={(checked) => setField("readOnly", checked === true)} />
                     Read Only Mode
                   </Label>
 
                   <div>
-                    <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Connection Color</p>
+                    <p className="mb-3 text-[11px] font-medium text-[var(--muted-foreground)]">Connection Color</p>
                     <div className="flex flex-wrap gap-2">
                       {connectionColors.map((color) => (
                         <Button
@@ -506,12 +595,12 @@ export function CollectionManager() {
                   )}
 
                   {testMessage ? (
-                    <p className={cn("text-sm", testMessage.kind === "success" ? "text-[#7acb8f]" : "text-[#d97b7b]")}>
+                    <p className={cn("text-[13px]", testMessage.kind === "success" ? "text-[#7acb8f]" : "text-[#d97b7b]")}>
                       {testMessage.text}
                     </p>
                   ) : null}
 
-                  {submitError ? <p className="text-sm text-[#d97b7b]">{submitError}</p> : null}
+                  {submitError ? <p className="text-[13px] text-[#d97b7b]">{submitError}</p> : null}
 
                   <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-5">
                     <Button variant="secondary" onClick={() => void testConnection()} disabled={isSubmitting || isTesting}>
@@ -522,11 +611,11 @@ export function CollectionManager() {
                     </Button>
                   </div>
                 </div>
-              </>
-            ) : (
-              selectedConnection && (
-                <>
-                  <div className="flex items-start justify-between gap-4">
+            </Card>
+          ) : (
+            selectedConnection ? (
+              <Card className="w-full max-w-[560px] gap-0 rounded-lg border border-white/10 bg-[#0c0e11]/88 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.42)] backdrop-blur-md">
+                <div className="flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-start gap-3">
                       <div
                         className="flex size-10 shrink-0 items-center justify-center text-white"
@@ -535,16 +624,21 @@ export function CollectionManager() {
                         <Database className="size-5" />
                       </div>
                       <div className="min-w-0">
-                        <h1 className="truncate text-xl font-semibold">{selectedConnection.name}</h1>
-                        <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                        <h1 className="truncate text-[18px] font-semibold">{selectedConnection.name}</h1>
+                        <p className="mt-2 text-[13px] text-[var(--muted-foreground)]">
                           {selectedConnection.username}@{selectedConnection.host}:{selectedConnection.port}
                         </p>
                       </div>
                     </div>
-                    <Button onClick={() => void state.openWorkspace(selectedConnection.id)}>Connect</Button>
+                    <div className="flex items-center gap-2">
+                      <Button onClick={() => void state.openWorkspace(selectedConnection.id)}>Connect</Button>
+                      <Button type="button" variant="ghost" size="icon" aria-label="Close panel" onClick={closeMainPanel}>
+                        <X className="size-4" />
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="mt-6 grid gap-3 text-sm">
+                  <div className="mt-6 grid gap-3 text-[13px]">
                     <div className="flex justify-between border-b border-[var(--border)] py-3">
                       <span className="text-[var(--muted-foreground)]">Type</span>
                       <span>{getDatabaseLabel(selectedConnection.kind)}</span>
@@ -580,10 +674,9 @@ export function CollectionManager() {
                       Delete
                     </Button>
                   </div>
-                </>
-              )
+              </Card>
+            ) : null
             )}
-          </Card>
         </main>
       </div>
     </div>

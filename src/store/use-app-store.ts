@@ -196,6 +196,14 @@ async function loadWorkspaceDataSafe(connectionId: string, activeTabId: string, 
 
 const saved = loadPersistedState();
 
+function persistWorkspaceState(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "activeTabId">) {
+  persist({
+    activeConnectionId: state.activeConnectionId,
+    activeTabId: state.activeTabId,
+    queryTabs: state.queryTabs,
+  });
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentScreen: getWindowScreen(),
   connections: [],
@@ -266,7 +274,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     }
 
-    persist({
+    persistWorkspaceState({
       activeConnectionId,
       activeTabId: tabs.activeTabId,
       queryTabs: tabs.queryTabs,
@@ -309,7 +317,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     void get().ensureSchemaHydrated(connectionId, workspace.selectedSchema);
 
-    persist({
+    persistWorkspaceState({
       activeConnectionId: connectionId,
       activeTabId: tabs.activeTabId,
       queryTabs: tabs.queryTabs,
@@ -371,11 +379,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = await getDesktopApi().getResults(id);
     set((state) => {
       const next = { ...state, activeTabId: id, result, queryError: null };
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-      });
+      persistWorkspaceState(next);
       return next;
     });
   },
@@ -384,11 +388,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const queryTabs = state.queryTabs.map((tab) => (tab.id === id ? { ...tab, sql } : tab));
       const next = { ...state, queryTabs };
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-      });
+      persistWorkspaceState(next);
       return next;
     }),
 
@@ -410,11 +410,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const queryTabs = state.queryTabs.map((tab) => (tab.id === id ? { ...tab, title: nextTitle } : tab));
       const next = { ...state, queryTabs };
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-      });
+      persistWorkspaceState(next);
       return next;
     }),
 
@@ -444,11 +440,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         outputHistoryByTab,
       };
 
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-      });
+      persistWorkspaceState(next);
       return next;
     });
   },
@@ -476,11 +468,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastRunQueryByTab: state.lastRunQueryByTab,
         outputHistoryByTab: state.outputHistoryByTab,
       };
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-      });
+      persistWorkspaceState(next);
       return next;
     });
 
@@ -536,11 +524,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           isRunningQuery: false,
         };
-        persist({
-          activeConnectionId: next.activeConnectionId,
-          activeTabId: next.activeTabId,
-          queryTabs: next.queryTabs,
-        });
+        persistWorkspaceState(next);
         return next;
       });
     } catch (error) {
@@ -597,11 +581,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           isRunningQuery: false,
         };
-        persist({
-          activeConnectionId: next.activeConnectionId,
-          activeTabId: next.activeTabId,
-          queryTabs: next.queryTabs,
-        });
+        persistWorkspaceState(next);
         return next;
       });
     } catch (error) {
