@@ -26,6 +26,7 @@ const api: HormusDesktopApi = {
   openConnectionWindow: (connectionId?: string) => ipcRenderer.invoke("window:openConnection", connectionId),
   openCollectionManagerWindow: () => ipcRenderer.invoke("window:openCollectionManager"),
   closeCurrentWindow: () => ipcRenderer.invoke("window:closeCurrent"),
+  quitApp: () => ipcRenderer.invoke("app:quit"),
   setWindowTitle: (title: string) => ipcRenderer.invoke("window:setTitle", title),
 };
 

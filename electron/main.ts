@@ -160,6 +160,9 @@ function registerIpc() {
   };
 
   handle("app:bootstrap", async (_event, connectionId?: string) => desktopBackend.bootstrap(connectionId));
+  handle("app:quit", async () => {
+    app.quit();
+  });
   handle("connections:list", async () => desktopBackend.listConnections());
   handle("connections:create", async (_event, input) => desktopBackend.createConnection(connectionCreateInputSchema.parse(input)));
   handle("connections:update", async (_event, input) => desktopBackend.updateConnection(connectionUpdateInputSchema.parse(input)));

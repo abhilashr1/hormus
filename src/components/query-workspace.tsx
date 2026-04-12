@@ -1,28 +1,31 @@
-import { ArrowLeft, ChevronDown, Database, Play, Plus, Search, Table2, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Database, Eye, Play, Plus, Sigma, Table2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
 import { getDesktopApi } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
-import { buildDescribeTableSql, quoteQualifiedName } from "@/shared/database";
+import { quoteQualifiedName } from "@/shared/database";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
-import type { Connection, SchemaNode } from "@/shared/ipc";
-
-type SchemaTable = SchemaNode["tables"][number];
-type SchemaView = SchemaNode["views"][number];
-type SchemaFunction = SchemaNode["functions"][number];
-type TableContextMenu = {
+import type { Connection } from "@/shared/ipc";
+type ExplorerItem = {
+  id: string;
+  kind: "table" | "view" | "function";
+  name: string;
+  subtitle: string;
+  queryable: boolean;
+};
+type ObjectContextMenu = {
   x: number;
   y: number;
   schema: string;
-  table: SchemaTable;
+  itemName: string;
 };
 
 function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
@@ -40,8 +43,8 @@ export function QueryWorkspace() {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [objectSearch, setObjectSearch] = useState("");
-  const [isObjectSearchVisible, setIsObjectSearchVisible] = useState(false);
-  const [tableContextMenu, setTableContextMenu] = useState<TableContextMenu | null>(null);
+  const [expandedSchemas, setExpandedSchemas] = useState<Record<string, boolean>>({});
+  const [objectContextMenu, setObjectContextMenu] = useState<ObjectContextMenu | null>(null);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   const combinedOutputHistory = useMemo(
     () =>
@@ -52,41 +55,76 @@ export function QueryWorkspace() {
         : [],
     [activeConnection, activeTab, state.outputHistoryByTab, state.workspaceOutputByConnection],
   );
-  const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
-  const tableObjects = selectedSchemaNode?.tables ?? [];
-  const viewObjects = selectedSchemaNode?.views ?? [];
-  const functionObjects = selectedSchemaNode?.functions ?? [];
   const objectFilter = objectSearch.trim().toLowerCase();
-  const filteredTableObjects = useMemo(() => {
-    if (!objectFilter) {
-      return tableObjects;
-    }
+  const filteredSchemas = useMemo(
+    () =>
+      state.schemas
+        .map((schema) => {
+          const items: ExplorerItem[] = [
+            ...schema.tables.map((table) => ({
+              id: `table:${schema.name}:${table.name}`,
+              kind: "table" as const,
+              name: table.name,
+              subtitle: [table.rowCount, `${table.columns} columns`].filter(Boolean).join(" • "),
+              queryable: true,
+            })),
+            ...schema.views.map((view) => ({
+              id: `view:${schema.name}:${view.name}`,
+              kind: "view" as const,
+              name: view.name,
+              subtitle: `${view.columns} columns`,
+              queryable: true,
+            })),
+            ...schema.functions.map((fn) => ({
+              id: `function:${schema.name}:${fn.name}`,
+              kind: "function" as const,
+              name: fn.name,
+              subtitle: "Function",
+              queryable: false,
+            })),
+          ];
 
-    return tableObjects.filter((table) =>
-      [table.name, `${table.columns} columns`, table.rowCount].join(" ").toLowerCase().includes(objectFilter),
-    );
-  }, [objectFilter, tableObjects]);
-  const filteredViewObjects = useMemo(() => {
-    if (!objectFilter) {
-      return viewObjects;
-    }
+          if (!objectFilter) {
+            return { ...schema, items };
+          }
 
-    return viewObjects.filter((view) => [view.name, `${view.columns} columns`].join(" ").toLowerCase().includes(objectFilter));
-  }, [objectFilter, viewObjects]);
-  const filteredFunctionObjects = useMemo(() => {
-    if (!objectFilter) {
-      return functionObjects;
-    }
+          const filteredItems = items.filter((item) => [item.name, item.subtitle, schema.name].join(" ").toLowerCase().includes(objectFilter));
+          const matchesSchema = schema.name.toLowerCase().includes(objectFilter);
 
-    return functionObjects.filter((fn) => fn.name.toLowerCase().includes(objectFilter));
-  }, [functionObjects, objectFilter]);
+          if (matchesSchema) {
+            return { ...schema, items };
+          }
+
+          return { ...schema, items: filteredItems };
+        })
+        .filter((schema) => !objectFilter || schema.name.toLowerCase().includes(objectFilter) || schema.items.length > 0)
+        .sort((left, right) => {
+          const leftPriority = left.name === state.selectedSchema || expandedSchemas[left.name] ? 0 : 1;
+          const rightPriority = right.name === state.selectedSchema || expandedSchemas[right.name] ? 0 : 1;
+
+          if (leftPriority !== rightPriority) {
+            return leftPriority - rightPriority;
+          }
+
+          if (left.name === state.selectedSchema && right.name !== state.selectedSchema) {
+            return -1;
+          }
+
+          if (right.name === state.selectedSchema && left.name !== state.selectedSchema) {
+            return 1;
+          }
+
+          return left.name.localeCompare(right.name);
+        }),
+    [expandedSchemas, objectFilter, state.schemas, state.selectedSchema],
+  );
 
   useEffect(() => {
-    if (!tableContextMenu) {
+    if (!objectContextMenu) {
       return undefined;
     }
 
-    const closeMenu = () => setTableContextMenu(null);
+    const closeMenu = () => setObjectContextMenu(null);
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         closeMenu();
@@ -99,7 +137,15 @@ export function QueryWorkspace() {
       window.removeEventListener("click", closeMenu);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [tableContextMenu]);
+  }, [objectContextMenu]);
+
+  useEffect(() => {
+    if (!state.selectedSchema) {
+      return;
+    }
+
+    setExpandedSchemas((current) => (current[state.selectedSchema] ? current : { ...current, [state.selectedSchema]: true }));
+  }, [state.selectedSchema]);
 
   useEffect(() => {
     if (!activeConnection) {
@@ -108,6 +154,43 @@ export function QueryWorkspace() {
 
     void getDesktopApi().setWindowTitle(`${activeConnection.name} - Hormus`);
   }, [activeConnection]);
+
+  useEffect(() => {
+    const handleShortcuts = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "w") {
+        event.preventDefault();
+        if (activeTab) {
+          void state.closeTab(activeTab.id);
+        }
+        return;
+      }
+
+      if (key === "t") {
+        event.preventDefault();
+        void state.createTab();
+        return;
+      }
+
+      if (key === "q") {
+        event.preventDefault();
+        const shouldQuit = window.confirm("Are you sure you want to quit?");
+        if (shouldQuit) {
+          void getDesktopApi().quitApp();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcuts, true);
+    return () => {
+      window.removeEventListener("keydown", handleShortcuts, true);
+    };
+  }, [activeTab, state]);
 
   if (!activeConnection || !activeTab) {
     return null;
@@ -125,19 +208,16 @@ export function QueryWorkspace() {
     setRenamingTabId(null);
     setRenameDraft("");
   };
-  const openTableQuery = async (schema: string, table: SchemaTable, action: "view" | "describe") => {
+  const openObjectQuery = async (schema: string, objectName: string) => {
     if (!schema) {
       return;
     }
 
-    setTableContextMenu(null);
-    const sql =
-      action === "view"
-        ? buildViewTableSql(activeConnection.kind, schema, table.name)
-        : buildDescribeTableSql(activeConnection.kind, schema, table.name);
+    setObjectContextMenu(null);
+    const sql = buildViewTableSql(activeConnection.kind, schema, objectName);
 
     await state.createTab({
-      title: action === "view" ? `View ${table.name}` : `Describe ${table.name}`,
+      title: `View ${objectName}`,
       sql,
       run: true,
     });
@@ -159,29 +239,60 @@ export function QueryWorkspace() {
       setIsExportingCsv(false);
     }
   };
-  const renderSecondaryObjectList = (
-    objects: SchemaView[] | SchemaFunction[],
-    kind: "view" | "function",
-    emptyLabel: string,
-  ) => {
-    if (objects.length === 0) {
-      return <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">{emptyLabel}</div>;
+  const toggleSchema = (schemaName: string) => {
+    const nextExpanded = !expandedSchemas[schemaName];
+    setExpandedSchemas((current) => ({ ...current, [schemaName]: nextExpanded }));
+    state.setSelectedSchema(schemaName);
+
+    if (nextExpanded && activeConnection) {
+      void state.ensureSchemaHydrated(activeConnection.id, schemaName);
+    }
+  };
+
+  const renderSchemaItems = (schemaName: string, items: ExplorerItem[]) => {
+    if (items.length === 0) {
+      return (
+        <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
+          {objectFilter ? "No matching objects." : "No objects loaded yet."}
+        </div>
+      );
     }
 
     return (
       <div className="space-y-0.5">
-        {objects.map((object) => (
+        {items.map((item) => (
           <Button
-            key={object.name}
+            key={item.id}
             type="button"
             variant="ghost"
+            onClick={() => state.setSelectedSchema(schemaName)}
+            onContextMenu={
+              item.queryable
+                ? (event) => {
+                    event.preventDefault();
+                    setObjectContextMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      schema: schemaName,
+                      itemName: item.name,
+                    });
+                  }
+                : undefined
+            }
             className="h-auto w-full justify-start rounded-md px-2.5 py-2 text-left"
           >
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium">{object.name}</p>
-              <p className="text-[11px] text-[var(--muted-foreground)]">
-                {kind === "view" && "columns" in object ? `${object.columns} columns` : "Function"}
-              </p>
+            <div className="flex min-w-0 items-center gap-2">
+              {item.kind === "table" ? (
+                <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : item.kind === "view" ? (
+                <Eye className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <Sigma className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium">{item.name}</p>
+                <p className="text-[11px] text-[var(--muted-foreground)]">{item.subtitle}</p>
+              </div>
             </div>
           </Button>
         ))}
@@ -229,108 +340,71 @@ export function QueryWorkspace() {
 
             <div className="border-b border-[var(--border)] px-4 py-3">
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Schema</p>
-                <ChevronDown className="size-3 text-[var(--muted-foreground)]" />
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Database</p>
               </div>
-              <Select value={state.selectedSchema} onValueChange={state.setSelectedSchema}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select schema" />
+              <Select value={activeConnection.database} disabled>
+                <SelectTrigger disabled>
+                  <span className="truncate">{activeConnection.database}</span>
                 </SelectTrigger>
                 <SelectContent>
-                  {state.schemas.map((schema) => (
-                    <SelectItem key={schema.name} value={schema.name}>
-                      {schema.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value={activeConnection.database}>{activeConnection.database}</SelectItem>
                 </SelectContent>
               </Select>
-              {isObjectSearchVisible ? (
-                <div className="mt-2">
-                  <Input
-                    autoFocus
-                    value={objectSearch}
-                    onChange={(event) => setObjectSearch(event.target.value)}
-                    placeholder="Search tables and objects"
-                  />
-                </div>
-              ) : (
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Search tables and objects"
-                    className="size-8"
-                    onClick={() => setIsObjectSearchVisible(true)}
-                  >
-                    <Search className="size-4" />
-                  </Button>
-                </div>
-              )}
+              <div className="mt-2">
+                <Input
+                  value={objectSearch}
+                  onChange={(event) => setObjectSearch(event.target.value)}
+                  placeholder="Filter"
+                />
+              </div>
             </div>
 
             <ScrollArea className="min-h-0 flex-1">
               <div className="px-2 py-3">
                 <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
-                  Database Objects
+                  Schemas
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Tables</div>
-                    <div className="space-y-0.5">
-                      {filteredTableObjects.length > 0 ? (
-                        filteredTableObjects.map((table) => (
+                <div className="space-y-1">
+                  {filteredSchemas.length > 0 ? (
+                    filteredSchemas.map((schema) => {
+                      const isExpanded = objectFilter ? true : Boolean(expandedSchemas[schema.name]);
+                      const isSelected = schema.name === state.selectedSchema;
+
+                      return (
+                        <div key={schema.name} className="space-y-1">
                           <Button
-                            key={table.name}
                             type="button"
                             variant="ghost"
-                            onContextMenu={(event) => {
-                              event.preventDefault();
-                              setTableContextMenu({
-                                x: event.clientX,
-                                y: event.clientY,
-                                schema: selectedSchemaNode?.name ?? state.selectedSchema,
-                                table,
-                              });
-                            }}
-                            className="h-auto w-full justify-between rounded-md px-2.5 py-2 text-left"
+                            onClick={() => toggleSchema(schema.name)}
+                            className={cn(
+                              "h-auto w-full justify-start rounded-md px-2 py-2 text-left",
+                              isSelected && "bg-[var(--panel-muted)] text-foreground",
+                            )}
                           >
                             <div className="flex min-w-0 items-center gap-2">
-                              <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
+                              {isExpanded ? (
+                                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                              )}
+                              <Database className="size-3.5 shrink-0 text-muted-foreground" />
                               <div className="min-w-0">
-                                <p className="truncate text-[13px] font-medium">{table.name}</p>
-                                <p className="text-[11px] text-[var(--muted-foreground)]">{table.columns} columns</p>
+                                <p className="truncate text-[13px] font-medium">{schema.name}</p>
+                                <p className="text-[11px] text-[var(--muted-foreground)]">{schema.items.length} objects</p>
                               </div>
                             </div>
-                            <span className="pl-2 text-[11px] text-[var(--muted-foreground)]">{table.rowCount || " "}</span>
                           </Button>
-                        ))
-                      ) : (
-                        <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
-                          {objectSearch.trim() ? "No matching tables." : "No tables loaded yet."}
+
+                          {isExpanded ? <div className="ml-4">{renderSchemaItems(schema.name, schema.items)}</div> : null}
                         </div>
-                      )}
+                      );
+                    })
+                  ) : (
+                    <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
+                      {objectFilter ? "No matching schemas or objects." : "No schemas loaded yet."}
                     </div>
-                  </div>
-
-                  <div>
-                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Views</div>
-                    {renderSecondaryObjectList(
-                      filteredViewObjects,
-                      "view",
-                      objectSearch.trim() ? "No matching views." : "No views loaded yet.",
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Functions</div>
-                    {renderSecondaryObjectList(
-                      filteredFunctionObjects,
-                      "function",
-                      objectSearch.trim() ? "No matching functions." : "No functions loaded yet.",
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             </ScrollArea>
@@ -474,29 +548,20 @@ export function QueryWorkspace() {
           </main>
         </div>
       </Card>
-      {tableContextMenu ? (
+      {objectContextMenu ? (
         <Card
-          className="fixed z-50 w-44 gap-0 rounded-md border border-[var(--border)] bg-[var(--popover)] p-1 py-1 shadow-[0_16px_48px_rgba(0,0,0,0.45)]"
-          style={{ left: tableContextMenu.x, top: tableContextMenu.y }}
+          className="fixed z-50 w-40 gap-0 rounded-md border border-[var(--border)] bg-[var(--popover)] p-1 py-1 text-[12px] shadow-[0_16px_48px_rgba(0,0,0,0.45)]"
+          style={{ left: objectContextMenu.x, top: objectContextMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="w-full justify-start rounded-[4px]"
-            onClick={() => void openTableQuery(tableContextMenu.schema, tableContextMenu.table, "view")}
+            className="h-7 w-full justify-start rounded-[4px] px-2 text-[12px]"
+            onClick={() => void openObjectQuery(objectContextMenu.schema, objectContextMenu.itemName)}
           >
             View
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start rounded-[4px]"
-            onClick={() => void openTableQuery(tableContextMenu.schema, tableContextMenu.table, "describe")}
-          >
-            Describe
           </Button>
         </Card>
       ) : null}

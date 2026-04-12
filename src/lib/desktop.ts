@@ -31,6 +31,7 @@ export function getDesktopApi(): HormusDesktopApi {
     openConnectionWindow: async () => undefined,
     openCollectionManagerWindow: async () => undefined,
     closeCurrentWindow: async () => undefined,
+    quitApp: async () => undefined,
     setWindowTitle: async () => undefined,
   };
 }
