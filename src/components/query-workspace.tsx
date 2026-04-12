@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+
 import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
+import { Card } from "@/components/ui/card";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { WorkspaceTabBar } from "@/components/workspace-tab-bar";
 import { getDesktopApi } from "@/lib/desktop";
 import { quoteQualifiedName } from "@/shared/database";
-import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 import type { Connection, QueryTab } from "@/shared/ipc";
+import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 
 function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
   return quoteQualifiedName(kind, schema, table);

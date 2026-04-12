@@ -1,8 +1,10 @@
 import { useEffect, useMemo } from "react";
+
 import { getRandomAppBackground } from "@/assets/backgrounds";
 import { CollectionManager } from "@/components/collection-manager";
 import { QueryWorkspace } from "@/components/query-workspace";
 import { useAppStore } from "@/store/use-app-store";
+
 import hormusLogoUrl from "../../hormus.png";
 
 export function AppShell() {

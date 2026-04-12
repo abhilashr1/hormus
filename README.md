@@ -2,6 +2,17 @@
 
 Hormus is a developer-first Electron database client for PostgreSQL and MySQL.
 
+## Open Source
+
+Hormus is released under the Apache 2.0 license. See [LICENSE](./LICENSE).
+
+Project contribution and community docs:
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- [SECURITY.md](./SECURITY.md)
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+
 ## Included
 
 - Vite React + TypeScript renderer
@@ -22,6 +33,12 @@ Install dependencies:
 npm install
 ```
 
+Run the full local verification suite:
+
+```bash
+npm run check
+```
+
 Run the renderer dev server:
 
 ```bash
@@ -32,6 +49,14 @@ Build the renderer and Electron entrypoints:
 
 ```bash
 npm run build
+```
+
+Run the focused checks individually:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
 ```
 
 Launch Electron against the built output:

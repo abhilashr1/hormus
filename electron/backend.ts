@@ -6,8 +6,8 @@ import type {
   HormusDesktopBackend,
   QueryExportCsvInput,
   QueryRunInput,
-  SchemaHydrateInput,
   QueryTab,
+  SchemaHydrateInput,
 } from "../src/shared/ipc.js";
 import { desktopSnapshotSchema } from "../src/shared/ipc.js";
 import { exportLiveQueryToCsv, hydrateLiveSchema, listLiveSchemaIndex, runLiveQuery, testLiveConnection } from "./db.js";

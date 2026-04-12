@@ -1,11 +1,12 @@
-import Editor from "@monaco-editor/react";
 import type { OnMount } from "@monaco-editor/react";
-import { useEffect, useRef } from "react";
+import Editor from "@monaco-editor/react";
 import type { editor as MonacoEditor, IRange, Position } from "monaco-editor";
+import { useEffect, useRef } from "react";
+
+import { Card } from "@/components/ui/card";
 import { quoteIdentifier } from "@/shared/database";
 import type { Connection, SchemaNode } from "@/shared/ipc";
 import { getSqlQueryAtOffset, parseSqlQueries, type SqlQuerySegment } from "@/shared/query";
-import { Card } from "@/components/ui/card";
 
 const QUALIFIED_SCHEMA_PATTERN = /(?:^|[\s(,])(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.(?:"[^"]*|`[^`]*|[A-Za-z_][\w$]*)?$/;
 const TRAILING_QUALIFIER_PATTERN = /(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.\s*$/;

@@ -3,3 +3,14 @@ dist
 dist-electron
 release
 .DS_Store
+coverage
+*.log
+.env
+.env.*
+.eslintcache
+.vscode
+playwright-report
+test-results
+vitest-report
+*.tsbuildinfo
+docs/CODEBASE_FLOW.md

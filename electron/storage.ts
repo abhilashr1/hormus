@@ -1,8 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+
 import { app, safeStorage } from "electron";
-import type { Connection, ConnectionCreateInput, ConnectionUpdateInput, QueryHistoryItem, QueryResult } from "../src/shared/ipc.js";
+
 import { getDatabaseDefaultPort } from "../src/shared/database.js";
+import type { Connection, ConnectionCreateInput, ConnectionUpdateInput, QueryHistoryItem, QueryResult } from "../src/shared/ipc.js";
 
 type SecretRecord =
   | {

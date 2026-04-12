@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
-import type { SchemaNode } from "../../src/shared/ipc.js";
+
 import { getDatabaseDefaultPort } from "../../src/shared/database.js";
+import type { SchemaNode } from "../../src/shared/ipc.js";
 import {
   buildPaginatedSql,
   isPaginatableQuery,

@@ -1,16 +1,18 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
+
 import type { IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
+
 import {
   connectionCreateInputSchema,
   connectionDeleteInputSchema,
-  schemaHydrateInputSchema,
   connectionTestInputSchema,
   connectionUpdateInputSchema,
   type HormusDesktopBackend,
   queryExportCsvInputSchema,
   queryRunInputSchema,
+  schemaHydrateInputSchema,
 } from "../src/shared/ipc.js";
 import { createElectronDesktopBackend } from "./backend.js";
 

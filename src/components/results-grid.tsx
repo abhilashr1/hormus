@@ -1,15 +1,19 @@
-import { AgGridReact } from "ag-grid-react";
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-quartz.css";
+
 import {
   AllCommunityModule,
-  ModuleRegistry,
   type CellClickedEvent,
   type CellContextMenuEvent,
   type ColDef,
+  ModuleRegistry,
   type SelectionChangedEvent,
 } from "ag-grid-community";
+import { AgGridReact } from "ag-grid-react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,8 +24,6 @@ import { cn } from "@/lib/utils";
 import type { QueryResult } from "@/shared/ipc";
 import { QUERY_RESULT_PAGE_SIZE } from "@/shared/query";
 import type { QueryOutputEntry } from "@/store/use-app-store";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-quartz.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 

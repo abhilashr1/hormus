@@ -1,6 +1,7 @@
 import { Database, GripVertical, Pencil, Plus, Search, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import { getRandomAppBackground } from "@/assets/backgrounds";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,9 +11,9 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/use-app-store";
 import { getDatabaseDefaultPort, getDatabaseLabel } from "@/shared/database";
 import type { Connection } from "@/shared/ipc";
+import { useAppStore } from "@/store/use-app-store";
 
 type FormState = {
   id?: string;
