@@ -190,7 +190,7 @@ export function QueryWorkspace() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[var(--background)] pt-[var(--window-titlebar-height)] text-[var(--foreground)]">
+    <div className="h-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
       <Card
         className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none border-0 py-0 shadow-none backdrop-blur-sm"
         style={{ backgroundColor: "rgba(15, 17, 20, 0.82)" }}
@@ -202,7 +202,7 @@ export function QueryWorkspace() {
               background: `linear-gradient(180deg, color-mix(in srgb, ${activeConnection.color} 32%, rgba(17, 19, 23, 0.8)) 0%, color-mix(in srgb, ${activeConnection.color} 16%, rgba(17, 19, 23, 0.76)) 55%, rgba(17, 19, 23, 0.72) 100%)`,
             }}
           >
-            <div className="border-b border-[var(--border)] px-4 py-4">
+            <div className="border-b border-[var(--border)] px-4 pb-4 pt-[calc(var(--window-titlebar-height)+0.5rem)]">
               <div className="flex items-center gap-2">
                 <div
                   className="flex size-6 items-center justify-center border border-[var(--border)] text-white"
@@ -346,7 +346,7 @@ export function QueryWorkspace() {
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex min-h-0 flex-1 flex-col">
               <div
-                className="flex h-11 items-end border-b border-[var(--border)] px-3 backdrop-blur-sm"
+                className="flex h-[calc(2.75rem+var(--window-titlebar-height))] items-end border-b border-[var(--border)] px-3 backdrop-blur-sm"
                 style={{ backgroundColor: "rgba(16, 18, 22, 0.78)" }}
               >
                 <Tabs value={activeTab.id} onValueChange={(value) => void state.setActiveTab(value)} className="min-w-0 flex-1">
