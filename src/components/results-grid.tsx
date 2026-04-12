@@ -19,6 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { QueryResult } from "@/shared/ipc";
 import { QUERY_RESULT_PAGE_SIZE } from "@/shared/query";
+import type { QueryOutputEntry } from "@/store/use-app-store";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 
@@ -28,13 +29,7 @@ interface ResultsGridProps {
   result?: QueryResult;
   error?: string;
   queryText?: string;
-  outputHistory?: Array<{
-    id: string;
-    query: string;
-    message: string;
-    status: "success" | "error";
-    ranAt: string;
-  }>;
+  outputHistory?: QueryOutputEntry[];
   isLoading?: boolean;
   onPageChange?: (pageOffset: number) => void;
   onExportCsv?: () => void;
@@ -309,7 +304,16 @@ export function ResultsGrid({
               {outputHistory.map((entry) => (
                 <Card key={entry.id} className="gap-0 rounded-none bg-[#0f1114] py-0">
                   <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
-                    <p className={cn("text-[13px]", entry.status === "error" ? "text-red-300" : "text-[var(--foreground)]")}>
+                    <p
+                      className={cn(
+                        "text-[13px]",
+                        entry.status === "error"
+                          ? "text-red-300"
+                          : entry.status === "info"
+                            ? "text-emerald-300"
+                            : "text-[var(--foreground)]",
+                      )}
+                    >
                       {entry.message}
                     </p>
                     <span className="text-[11px] text-[var(--muted-foreground)]">{entry.ranAt}</span>

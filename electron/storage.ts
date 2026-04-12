@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { app, safeStorage } from "electron";
 import type { Connection, ConnectionCreateInput, ConnectionUpdateInput, QueryHistoryItem, QueryResult } from "../src/shared/ipc.js";
+import { getDatabaseDefaultPort } from "../src/shared/database.js";
 
 type SecretRecord =
   | {
@@ -61,7 +62,10 @@ function migrateState(raw: unknown): PersistedDesktopState {
       name: connection.name ?? "",
       kind: connection.kind === "mysql" ? "mysql" : "postgresql",
       host: connection.host ?? "",
-      port: typeof connection.port === "number" ? connection.port : connection.kind === "mysql" ? 3306 : 5432,
+      port:
+        typeof connection.port === "number"
+          ? connection.port
+          : getDatabaseDefaultPort(connection.kind === "mysql" ? "mysql" : "postgresql"),
       authMethod: connection.authMethod === "username_password" ? connection.authMethod : "username_password",
       username: connection.username ?? "",
       database: connection.database ?? "",

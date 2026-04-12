@@ -6,10 +6,11 @@ import type {
   HormusDesktopBackend,
   QueryExportCsvInput,
   QueryRunInput,
+  SchemaHydrateInput,
   QueryTab,
 } from "../src/shared/ipc.js";
 import { desktopSnapshotSchema } from "../src/shared/ipc.js";
-import { exportLiveQueryToCsv, listLiveSchemas, runLiveQuery, testLiveConnection } from "./db.js";
+import { exportLiveQueryToCsv, hydrateLiveSchema, listLiveSchemaIndex, runLiveQuery, testLiveConnection } from "./db.js";
 import { DesktopStorage } from "./storage.js";
 
 interface BackendState {
@@ -54,13 +55,22 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
   };
   ensureTabs(state);
 
-  const listSchemas = async (connectionId: string) => {
+  const listSchemaIndex = async (connectionId: string) => {
     const connection = await storage.getConnection(connectionId);
     if (!connection) {
       throw new Error(`Connection ${connectionId} not found`);
     }
 
-    return listLiveSchemas(connection);
+    return listLiveSchemaIndex(connection);
+  };
+
+  const hydrateSchema = async (input: SchemaHydrateInput) => {
+    const connection = await storage.getConnection(input.connectionId);
+    if (!connection) {
+      throw new Error(`Connection ${input.connectionId} not found`);
+    }
+
+    return hydrateLiveSchema(connection, input.schemaName);
   };
 
   return {
@@ -119,8 +129,12 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
       return { success: true as const };
     },
 
-    async listSchemas(connectionId: string) {
-      return listSchemas(connectionId);
+    async listSchemaIndex(connectionId: string) {
+      return listSchemaIndex(connectionId);
+    },
+
+    async hydrateSchema(input: SchemaHydrateInput) {
+      return hydrateSchema(input);
     },
 
     async listHistory(connectionId: string) {

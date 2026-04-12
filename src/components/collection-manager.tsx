@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/use-app-store";
+import { getDatabaseDefaultPort, getDatabaseLabel } from "@/shared/database";
 import type { Connection } from "@/shared/ipc";
 
 type FormState = {
@@ -29,16 +30,16 @@ type FormState = {
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const connectionColors = [
-  "#2f80ed",
-  "#27ae60",
-  "#eb5757",
-  "#f2994a",
-  "#f2c94c",
-  "#56ccf2",
-  "#9b51e0",
-  "#bb6bd9",
-  "#00a896",
-  "#ff6b6b",
+  "#2f80ed", // Blue
+  "#27ae60", // Green
+  "#eb5757", // Red
+  "#f2994a", // Orange
+  "#f2c94c", // Yellow
+  "#56ccf2", // Light Blue
+  "#9b51e0", // Purple
+  "#bb6bd9", // Light Purple
+  "#00a896", // Teal
+  "#ff6b6b", // Light Red
 ];
 
 const emptyForm: FormState = {
@@ -46,7 +47,7 @@ const emptyForm: FormState = {
   kind: "postgresql",
   authMethod: "username_password",
   host: "localhost",
-  port: "5432",
+  port: String(getDatabaseDefaultPort("postgresql")),
   username: "",
   password: "",
   database: "",
@@ -54,16 +55,8 @@ const emptyForm: FormState = {
   color: connectionColors[0],
 };
 
-function kindLabel(kind: Connection["kind"]) {
-  return kind === "postgresql" ? "PostgreSQL" : "MySQL";
-}
-
 function authMethodLabel(method: Connection["authMethod"]) {
   return method === "username_password" ? "Username / Password" : method;
-}
-
-function defaultPort(kind: Connection["kind"]) {
-  return kind === "postgresql" ? "5432" : "3306";
 }
 
 function fieldLabel(label: string, children: ReactNode, error?: string) {
@@ -95,7 +88,7 @@ export function CollectionManager() {
     }
 
     return state.connections.filter((connection) =>
-      [connection.name, connection.host, connection.database, connection.username, kindLabel(connection.kind)]
+      [connection.name, connection.host, connection.database, connection.username, getDatabaseLabel(connection.kind)]
         .join(" ")
         .toLowerCase()
         .includes(needle),
@@ -391,7 +384,10 @@ export function CollectionManager() {
                         setForm((current) => ({
                           ...current,
                           kind,
-                          port: current.port === defaultPort(current.kind) || !current.port ? defaultPort(kind) : current.port,
+                          port:
+                            current.port === String(getDatabaseDefaultPort(current.kind)) || !current.port
+                              ? String(getDatabaseDefaultPort(kind))
+                              : current.port,
                         }));
                         setSubmitError("");
                       }}
@@ -400,8 +396,8 @@ export function CollectionManager() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="postgresql">PostgreSQL</SelectItem>
-                        <SelectItem value="mysql">MySQL</SelectItem>
+                        <SelectItem value="postgresql">{getDatabaseLabel("postgresql")}</SelectItem>
+                        <SelectItem value="mysql">{getDatabaseLabel("mysql")}</SelectItem>
                       </SelectContent>
                     </Select>,
                   )}
@@ -551,7 +547,7 @@ export function CollectionManager() {
                   <div className="mt-6 grid gap-3 text-sm">
                     <div className="flex justify-between border-b border-[var(--border)] py-3">
                       <span className="text-[var(--muted-foreground)]">Type</span>
-                      <span>{kindLabel(selectedConnection.kind)}</span>
+                      <span>{getDatabaseLabel(selectedConnection.kind)}</span>
                     </div>
                     <div className="flex justify-between border-b border-[var(--border)] py-3">
                       <span className="text-[var(--muted-foreground)]">Authentication</span>

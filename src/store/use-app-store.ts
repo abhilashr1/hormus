@@ -15,12 +15,13 @@ import type {
 
 type AppScreen = "collection-manager" | "workspace";
 
-interface QueryOutputEntry {
+export interface QueryOutputEntry {
   id: string;
   query: string;
   message: string;
-  status: "success" | "error";
+  status: "success" | "error" | "info";
   ranAt: string;
+  occurredAt: string;
 }
 
 interface CreateTabInput {
@@ -42,6 +43,9 @@ interface AppState {
   queryError: string | null;
   lastRunQueryByTab: Record<string, string>;
   outputHistoryByTab: Record<string, QueryOutputEntry[]>;
+  workspaceOutputByConnection: Record<string, QueryOutputEntry[]>;
+  hydratedSchemasByConnection: Record<string, string[]>;
+  schemaHydrationJobId: number;
   isBootstrapping: boolean;
   isRunningQuery: boolean;
   bootstrap: () => Promise<void>;
@@ -61,6 +65,7 @@ interface AppState {
   createTab: (input?: CreateTabInput) => Promise<void>;
   runTab: (id: string, selectionOverride?: string) => Promise<void>;
   runTabPage: (id: string, pageOffset: number) => Promise<void>;
+  ensureSchemaHydrated: (connectionId: string, preferredSchema?: string) => Promise<void>;
 }
 
 const STORAGE_KEY = "hormus-phase-2";
@@ -108,22 +113,67 @@ function persist(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "act
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-const saved = loadPersistedState();
+function createOutputEntry(query: string, message: string, status: QueryOutputEntry["status"]): QueryOutputEntry {
+  const occurredAt = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    query,
+    message,
+    status,
+    ranAt: new Date().toLocaleString(),
+    occurredAt,
+  };
+}
 
-async function loadWorkspaceData(connectionId: string, activeTabId: string, preferredSchema?: string) {
-  const api = getDesktopApi();
-  const [schemas, history, result] = await Promise.all([
-    api.listSchemas(connectionId),
-    api.listHistory(connectionId),
-    api.getResults(activeTabId),
-  ]);
+function sanitizeDesktopError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const ipcPrefix = /^Error invoking remote method '[^']+':\s*/i;
+  return message.replace(ipcPrefix, "").trim() || fallback;
+}
+
+function mergeSchemaNode(existing: SchemaNode, incoming: SchemaNode): SchemaNode {
+  const mergeObjects = <
+    T extends { name: string; columns?: number; columnNames?: string[]; rowCount?: string },
+  >(
+    currentItems: T[],
+    incomingItems: T[],
+  ) => {
+    const incomingByName = new Map(incomingItems.map((item) => [item.name.toLowerCase(), item]));
+    return currentItems.map((currentItem) => {
+      const nextItem = incomingByName.get(currentItem.name.toLowerCase());
+      return nextItem ? { ...currentItem, ...nextItem } : currentItem;
+    });
+  };
 
   return {
-    schemas,
-    history,
-    result,
-    selectedSchema: getDefaultSchemaName(schemas, preferredSchema),
+    ...existing,
+    tables: mergeObjects(existing.tables, incoming.tables),
+    views: mergeObjects(existing.views, incoming.views),
+    functions: incoming.functions.length > 0 ? incoming.functions : existing.functions,
   };
+}
+
+function loadWorkspaceData(connectionId: string, activeTabId: string, preferredSchema?: string) {
+  const api = getDesktopApi();
+  return Promise.all([
+    api.listSchemaIndex(connectionId),
+    api.listHistory(connectionId),
+    api.getResults(activeTabId),
+  ]).then(async ([schemas, history, result]) => {
+    const selectedSchema = getDefaultSchemaName(schemas, preferredSchema);
+    const hydratedSelectedSchema = selectedSchema
+      ? await api.hydrateSchema({ connectionId, schemaName: selectedSchema }).catch(() => null)
+      : null;
+
+    return {
+      schemas: hydratedSelectedSchema
+        ? schemas.map((schema) => (schema.name === hydratedSelectedSchema.name ? mergeSchemaNode(schema, hydratedSelectedSchema) : schema))
+        : schemas,
+      history,
+      result,
+      selectedSchema,
+    };
+  });
 }
 
 async function loadWorkspaceDataSafe(connectionId: string, activeTabId: string, preferredSchema?: string) {
@@ -144,6 +194,8 @@ async function loadWorkspaceDataSafe(connectionId: string, activeTabId: string, 
   }
 }
 
+const saved = loadPersistedState();
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentScreen: getWindowScreen(),
   connections: [],
@@ -157,6 +209,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryError: null,
   lastRunQueryByTab: {},
   outputHistoryByTab: {},
+  workspaceOutputByConnection: {},
+  hydratedSchemasByConnection: {},
+  schemaHydrationJobId: 0,
   isBootstrapping: true,
   isRunningQuery: false,
 
@@ -186,15 +241,24 @@ export const useAppStore = create<AppState>((set, get) => ({
             snapshot.connections.find((connection) => connection.id === activeConnectionId)?.database,
           )
         : { schemas: [], history: [], result: null, selectedSchema: "", queryError: null };
-      set({
+
+      set((current) => ({
+        ...current,
         ...nextState,
         schemas: workspace.schemas,
         selectedSchema: workspace.selectedSchema,
         history: workspace.history,
         result: workspace.result,
         queryError: workspace.queryError,
+        workspaceOutputByConnection: activeConnectionId
+          ? { ...current.workspaceOutputByConnection, [activeConnectionId]: [] }
+          : current.workspaceOutputByConnection,
         isBootstrapping: false,
-      });
+      }));
+
+      if (activeConnectionId) {
+        void get().ensureSchemaHydrated(activeConnectionId, workspace.selectedSchema);
+      }
     } else {
       set({
         ...nextState,
@@ -236,8 +300,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       history: workspace.history,
       result: workspace.result,
       queryError: workspace.queryError,
+      workspaceOutputByConnection: {
+        ...current.workspaceOutputByConnection,
+        [connectionId]: [],
+      },
       isBootstrapping: false,
     }));
+
+    void get().ensureSchemaHydrated(connectionId, workspace.selectedSchema);
 
     persist({
       activeConnectionId: connectionId,
@@ -269,17 +339,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-	  updateConnection: async (input) => {
-	    const updated = await getDesktopApi().updateConnection(input);
-	    set((state) => ({
-	      ...state,
-	      connections: state.connections.map((connection) => (connection.id === updated.id ? updated : connection)),
-	    }));
-	  },
+  updateConnection: async (input) => {
+    const updated = await getDesktopApi().updateConnection(input);
+    set((state) => ({
+      ...state,
+      connections: state.connections.map((connection) => (connection.id === updated.id ? updated : connection)),
+    }));
+  },
 
-	  testConnection: async (input) => getDesktopApi().testConnection(input),
-	
-	  deleteConnection: async (id) => {
+  testConnection: async (input) => getDesktopApi().testConnection(input),
+
+  deleteConnection: async (id) => {
     await getDesktopApi().deleteConnection({ id });
     set((state) => ({
       ...state,
@@ -289,7 +359,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  setSelectedSchema: (schema) => set({ selectedSchema: schema }),
+  setSelectedSchema: (schema) => {
+    set({ selectedSchema: schema });
+    const state = get();
+    if (state.activeConnectionId) {
+      void state.ensureSchemaHydrated(state.activeConnectionId, schema);
+    }
+  },
 
   setActiveTab: async (id) => {
     const result = await getDesktopApi().getResults(id);
@@ -448,15 +524,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           outputHistoryByTab: {
             ...current.outputHistoryByTab,
             [id]: [
-              {
-                id: crypto.randomUUID(),
-                query: executedSql,
-                message: response.result
+              createOutputEntry(
+                executedSql,
+                response.result
                   ? `Returned ${response.result.rowCount.toLocaleString()} rows in ${response.result.durationMs}ms`
                   : "Query completed",
-                status: "success" as const,
-                ranAt: new Date().toLocaleString(),
-              },
+                "success",
+              ),
               ...(current.outputHistoryByTab[id] ?? []),
             ],
           },
@@ -470,7 +544,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return next;
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Query failed";
+      const message = sanitizeDesktopError(error, "Query failed");
 
       set((current) => ({
         ...current,
@@ -483,16 +557,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
         outputHistoryByTab: {
           ...current.outputHistoryByTab,
-          [id]: [
-            {
-              id: crypto.randomUUID(),
-              query: executedSql,
-              message,
-              status: "error" as const,
-              ranAt: new Date().toLocaleString(),
-            },
-            ...(current.outputHistoryByTab[id] ?? []),
-          ],
+          [id]: [createOutputEntry(executedSql, message, "error"), ...(current.outputHistoryByTab[id] ?? [])],
         },
         isRunningQuery: false,
       }));
@@ -540,7 +605,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         return next;
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Query failed";
+      const message = sanitizeDesktopError(error, "Query failed");
 
       set((current) => ({
         ...current,
@@ -548,6 +613,106 @@ export const useAppStore = create<AppState>((set, get) => ({
         result: null,
         queryError: message,
         isRunningQuery: false,
+      }));
+    }
+  },
+
+  ensureSchemaHydrated: async (connectionId, preferredSchema) => {
+    const state = get();
+    const availableSchemas = state.activeConnectionId === connectionId ? state.schemas : [];
+    if (availableSchemas.length === 0) {
+      return;
+    }
+
+    const hydrated = new Set(state.hydratedSchemasByConnection[connectionId] ?? []);
+    const orderedSchemas = [
+      ...(preferredSchema ? [preferredSchema] : []),
+      ...availableSchemas.map((schema) => schema.name).filter((schemaName) => schemaName !== preferredSchema),
+    ].filter((schemaName, index, list) => list.indexOf(schemaName) === index && !hydrated.has(schemaName));
+
+    if (orderedSchemas.length === 0) {
+      return;
+    }
+
+    const jobId = state.schemaHydrationJobId + 1;
+    set((current) => ({
+      schemaHydrationJobId: jobId,
+      workspaceOutputByConnection: {
+        ...current.workspaceOutputByConnection,
+        [connectionId]: [
+          createOutputEntry(
+            "",
+            orderedSchemas.length === 1
+              ? `Loading schema metadata for ${orderedSchemas[0]}...`
+              : `Loading schema metadata for ${orderedSchemas[0]} first, then ${orderedSchemas.length - 1} more schema${orderedSchemas.length > 2 ? "s" : ""}...`,
+            "info",
+          ),
+          ...(current.workspaceOutputByConnection[connectionId] ?? []),
+        ],
+      },
+    }));
+
+    for (let index = 0; index < orderedSchemas.length; index += 1) {
+      const schemaName = orderedSchemas[index];
+      const currentState = get();
+      if (currentState.schemaHydrationJobId !== jobId || currentState.activeConnectionId !== connectionId) {
+        return;
+      }
+
+      try {
+        const hydratedSchema = await getDesktopApi().hydrateSchema({ connectionId, schemaName });
+        const nextState = get();
+        if (nextState.schemaHydrationJobId !== jobId || nextState.activeConnectionId !== connectionId) {
+          return;
+        }
+
+        if (!hydratedSchema) {
+          continue;
+        }
+
+        set((current) => ({
+          ...current,
+          schemas: current.schemas.map((schema) =>
+            schema.name === hydratedSchema.name ? mergeSchemaNode(schema, hydratedSchema) : schema,
+          ),
+          hydratedSchemasByConnection: {
+            ...current.hydratedSchemasByConnection,
+            [connectionId]: Array.from(new Set([...(current.hydratedSchemasByConnection[connectionId] ?? []), schemaName])),
+          },
+          workspaceOutputByConnection: {
+            ...current.workspaceOutputByConnection,
+            [connectionId]: [
+              createOutputEntry("", `Loaded schema metadata for ${schemaName} (${index + 1}/${orderedSchemas.length}).`, "info"),
+              ...(current.workspaceOutputByConnection[connectionId] ?? []),
+            ],
+          },
+        }));
+      } catch (error) {
+        const message = sanitizeDesktopError(error, "Failed to hydrate schema metadata");
+        set((current) => ({
+          ...current,
+          workspaceOutputByConnection: {
+            ...current.workspaceOutputByConnection,
+            [connectionId]: [
+              createOutputEntry("", `Failed to load schema metadata for ${schemaName}: ${message}`, "error"),
+              ...(current.workspaceOutputByConnection[connectionId] ?? []),
+            ],
+          },
+        }));
+      }
+    }
+
+    const finalState = get();
+    if (finalState.schemaHydrationJobId === jobId && finalState.activeConnectionId === connectionId) {
+      set((current) => ({
+        ...current,
+        workspaceOutputByConnection: {
+          ...current.workspaceOutputByConnection,
+          [connectionId]: [
+            createOutputEntry("", `Schema metadata ready. Hydrated ${orderedSchemas.length} schema${orderedSchemas.length > 1 ? "s" : ""}.`, "info"),
+            ...(current.workspaceOutputByConnection[connectionId] ?? []),
+          ],
+        },
       }));
     }
   },

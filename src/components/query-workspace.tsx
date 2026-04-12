@@ -11,6 +11,7 @@ import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
 import { getDesktopApi } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
+import { buildDescribeTableSql, quoteQualifiedName } from "@/shared/database";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 import type { Connection, SchemaNode } from "@/shared/ipc";
 
@@ -24,38 +25,12 @@ type TableContextMenu = {
   table: SchemaTable;
 };
 
-function quoteIdentifier(kind: Connection["kind"], identifier: string) {
-  if (kind === "mysql") {
-    return `\`${identifier.replace(/`/g, "``")}\``;
-  }
-
-  return `"${identifier.replace(/"/g, '""')}"`;
-}
-
-function quoteSqlString(value: string) {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
 function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
-  return `${quoteIdentifier(kind, schema)}.${quoteIdentifier(kind, table)}`;
+  return quoteQualifiedName(kind, schema, table);
 }
 
 function buildViewTableSql(kind: Connection["kind"], schema: string, table: string) {
   return `select * from ${qualifiedTableName(kind, schema, table)};`;
-}
-
-function buildDescribeTableSql(kind: Connection["kind"], schema: string, table: string) {
-  if (kind === "mysql") {
-    return `describe ${qualifiedTableName(kind, schema, table)};`;
-  }
-
-  return [
-    "select column_name, data_type, is_nullable, column_default",
-    "from information_schema.columns",
-    `where table_schema = ${quoteSqlString(schema)}`,
-    `  and table_name = ${quoteSqlString(table)}`,
-    "order by ordinal_position;",
-  ].join("\n");
 }
 
 export function QueryWorkspace() {
@@ -68,6 +43,15 @@ export function QueryWorkspace() {
   const [isObjectSearchVisible, setIsObjectSearchVisible] = useState(false);
   const [tableContextMenu, setTableContextMenu] = useState<TableContextMenu | null>(null);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const combinedOutputHistory = useMemo(
+    () =>
+      activeConnection && activeTab
+        ? [...(state.workspaceOutputByConnection[activeConnection.id] ?? []), ...(state.outputHistoryByTab[activeTab.id] ?? [])].sort(
+            (left, right) => right.occurredAt.localeCompare(left.occurredAt),
+          )
+        : [],
+    [activeConnection, activeTab, state.outputHistoryByTab, state.workspaceOutputByConnection],
+  );
   const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
   const tableObjects = selectedSchemaNode?.tables ?? [];
   const viewObjects = selectedSchemaNode?.views ?? [];
@@ -460,7 +444,7 @@ export function QueryWorkspace() {
                     result={state.result ?? undefined}
                     error={state.queryError ?? undefined}
                     queryText={state.lastRunQueryByTab[activeTab.id]}
-                    outputHistory={state.outputHistoryByTab[activeTab.id] ?? []}
+                    outputHistory={combinedOutputHistory}
                     isLoading={state.isRunningQuery}
                     onPageChange={(pageOffset) => void state.runTabPage(activeTab.id, pageOffset)}
                     onExportCsv={() => void exportResultsCsv()}

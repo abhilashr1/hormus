@@ -5,6 +5,7 @@ import type { IpcMainInvokeEvent } from "electron";
 import {
   connectionCreateInputSchema,
   connectionDeleteInputSchema,
+  schemaHydrateInputSchema,
   connectionTestInputSchema,
   connectionUpdateInputSchema,
   type HormusDesktopBackend,
@@ -151,7 +152,8 @@ function registerIpc() {
   handle("connections:update", async (_event, input) => desktopBackend.updateConnection(connectionUpdateInputSchema.parse(input)));
   handle("connections:test", async (_event, input) => desktopBackend.testConnection(connectionTestInputSchema.parse(input)));
   handle("connections:delete", async (_event, input) => desktopBackend.deleteConnection(connectionDeleteInputSchema.parse(input)));
-  handle("schemas:list", async (_event, connectionId: string) => desktopBackend.listSchemas(connectionId));
+  handle("schemas:index", async (_event, connectionId: string) => desktopBackend.listSchemaIndex(connectionId));
+  handle("schemas:hydrate", async (_event, input) => desktopBackend.hydrateSchema(schemaHydrateInputSchema.parse(input)));
   handle("history:list", async (_event, connectionId: string) => desktopBackend.listHistory(connectionId));
   handle("results:get", async (_event, tabId: string) => desktopBackend.getResults(tabId));
   handle("query:run", async (_event, input) => desktopBackend.runQuery(queryRunInputSchema.parse(input)));

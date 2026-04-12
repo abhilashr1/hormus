@@ -191,9 +191,10 @@ select {
   display: none;
   pointer-events: none;
   z-index: 4;
+  box-sizing: border-box;
   border: 1px solid rgba(85, 194, 122, 0.9);
   background: rgba(85, 194, 122, 0.06);
-  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .monaco-editor .glyph-margin {

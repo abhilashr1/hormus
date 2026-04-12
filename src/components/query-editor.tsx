@@ -2,11 +2,11 @@ import Editor from "@monaco-editor/react";
 import type { OnMount } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
 import type { editor as MonacoEditor, IRange, Position } from "monaco-editor";
+import { quoteIdentifier } from "@/shared/database";
 import type { Connection, SchemaNode } from "@/shared/ipc";
 import { getSqlQueryAtOffset, parseSqlQueries, type SqlQuerySegment } from "@/shared/query";
 import { Card } from "@/components/ui/card";
 
-const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
 const QUALIFIED_SCHEMA_PATTERN = /(?:^|[\s(,])(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.(?:"[^"]*|`[^`]*|[A-Za-z_][\w$]*)?$/;
 const TRAILING_QUALIFIER_PATTERN = /(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.\s*$/;
 const SQL_IDENTIFIER_FRAGMENT = /"([^"]|"")*"|`([^`]|``)*`|[A-Za-z_][\w$]*/.source;
@@ -55,22 +55,6 @@ interface QueryEditorProps {
   schemas: SchemaNode[];
   selectedSchema: string;
   connectionKind: Connection["kind"];
-}
-
-function isSimpleIdentifier(value: string) {
-  return SIMPLE_IDENTIFIER_PATTERN.test(value);
-}
-
-function quoteIdentifier(kind: Connection["kind"], identifier: string) {
-  if (isSimpleIdentifier(identifier)) {
-    return identifier;
-  }
-
-  if (kind === "mysql") {
-    return `\`${identifier.replace(/`/g, "``")}\``;
-  }
-
-  return `"${identifier.replace(/"/g, '""')}"`;
 }
 
 function getSelectedSchemaNode(schemas: SchemaNode[], selectedSchema: string) {
@@ -148,7 +132,7 @@ function buildSchemaSuggestions(
   return schemas.map((schema) => ({
     label: schema.name,
     kind: monaco.languages.CompletionItemKind.Module,
-    insertText: quoteIdentifier(connectionKind, schema.name),
+    insertText: quoteIdentifier(connectionKind, schema.name, { preserveSimple: true }),
     detail: "Schema",
     range,
     sortText: `0-${schema.name}`,
@@ -166,13 +150,13 @@ function buildObjectSuggestions(
     return [];
   }
 
-  const prefix = options?.includeSchemaPrefix ? `${quoteIdentifier(connectionKind, schema.name)}.` : "";
+  const prefix = options?.includeSchemaPrefix ? `${quoteIdentifier(connectionKind, schema.name, { preserveSimple: true })}.` : "";
   const sortPrefix = options?.sortPrefix ?? "1";
 
   const tables = schema.tables.map((table) => ({
     label: table.name,
     kind: monaco.languages.CompletionItemKind.Struct,
-    insertText: `${prefix}${quoteIdentifier(connectionKind, table.name)}`,
+    insertText: `${prefix}${quoteIdentifier(connectionKind, table.name, { preserveSimple: true })}`,
     detail: `Table • ${schema.name}`,
     range,
     sortText: `${sortPrefix}-table-${schema.name}-${table.name}`,
@@ -181,7 +165,7 @@ function buildObjectSuggestions(
   const views = schema.views.map((view) => ({
     label: view.name,
     kind: monaco.languages.CompletionItemKind.Interface,
-    insertText: `${prefix}${quoteIdentifier(connectionKind, view.name)}`,
+    insertText: `${prefix}${quoteIdentifier(connectionKind, view.name, { preserveSimple: true })}`,
     detail: `View • ${schema.name}`,
     range,
     sortText: `${sortPrefix}-view-${schema.name}-${view.name}`,
@@ -190,7 +174,7 @@ function buildObjectSuggestions(
   const functions = schema.functions.map((fn) => ({
     label: fn.name,
     kind: monaco.languages.CompletionItemKind.Function,
-    insertText: `${prefix}${quoteIdentifier(connectionKind, fn.name)}($0)`,
+    insertText: `${prefix}${quoteIdentifier(connectionKind, fn.name, { preserveSimple: true })}($0)`,
     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
     detail: `Function • ${schema.name}`,
     range,
@@ -221,7 +205,7 @@ function buildColumnSuggestions(
       {
         label: columnName,
         kind: monaco.languages.CompletionItemKind.Field,
-        insertText: quoteIdentifier(connectionKind, columnName),
+        insertText: quoteIdentifier(connectionKind, columnName, { preserveSimple: true }),
         detail,
         range,
         sortText: `${sortPrefix}-column-${columnName}`,
@@ -428,6 +412,87 @@ export function QueryEditor({
       editorDomNode.appendChild(activeQueryOverlay);
     }
 
+    const updateOverlayBounds = (bounds: { left: number; top: number; width: number; height: number } | null) => {
+      if (!bounds) {
+        activeQueryOverlay.style.display = "none";
+        return;
+      }
+
+      activeQueryOverlay.style.display = "block";
+      activeQueryOverlay.style.left = `${bounds.left}px`;
+      activeQueryOverlay.style.top = `${bounds.top}px`;
+      activeQueryOverlay.style.width = `${Math.max(8, bounds.width)}px`;
+      activeQueryOverlay.style.height = `${Math.max(1, bounds.height)}px`;
+    };
+
+    const getQueryOverlayBounds = (query: SqlQuerySegment) => {
+      const model = editor.getModel();
+      if (!model) {
+        return null;
+      }
+
+      const start = model.getPositionAt(query.startOffset);
+      const end = model.getPositionAt(query.endOffset);
+      let minLeft = Number.POSITIVE_INFINITY;
+      let minTop = Number.POSITIVE_INFINITY;
+      let maxRight = Number.NEGATIVE_INFINITY;
+      let maxBottom = Number.NEGATIVE_INFINITY;
+      let foundVisibleContent = false;
+
+      for (let lineNumber = start.lineNumber; lineNumber <= end.lineNumber; lineNumber += 1) {
+        const lineStartColumn = lineNumber === start.lineNumber ? start.column : 1;
+        const lineEndColumn = lineNumber === end.lineNumber ? end.column : model.getLineMaxColumn(lineNumber);
+        const lineContent = model.getLineContent(lineNumber);
+        const effectiveEndColumn = Math.max(lineStartColumn + 1, lineEndColumn);
+
+        if (!lineContent.trim()) {
+          continue;
+        }
+
+        const visualRows = new Map<number, { left: number; right: number; height: number }>();
+        for (let column = lineStartColumn; column < effectiveEndColumn; column += 1) {
+          const startPosition = editor.getScrolledVisiblePosition({ lineNumber, column });
+          const endPosition = editor.getScrolledVisiblePosition({
+            lineNumber,
+            column: Math.min(model.getLineMaxColumn(lineNumber), column + 1),
+          });
+
+          if (!startPosition || !endPosition) {
+            continue;
+          }
+
+          const row = visualRows.get(startPosition.top) ?? {
+            left: startPosition.left,
+            right: endPosition.left,
+            height: startPosition.height,
+          };
+          row.left = Math.min(row.left, startPosition.left);
+          row.right = Math.max(row.right, endPosition.left);
+          row.height = Math.max(row.height, startPosition.height);
+          visualRows.set(startPosition.top, row);
+        }
+
+        for (const [top, row] of visualRows.entries()) {
+          foundVisibleContent = true;
+          minLeft = Math.min(minLeft, row.left);
+          minTop = Math.min(minTop, top);
+          maxRight = Math.max(maxRight, row.right);
+          maxBottom = Math.max(maxBottom, top + row.height);
+        }
+      }
+
+      if (!foundVisibleContent) {
+        return null;
+      }
+
+      return {
+        left: minLeft,
+        top: minTop,
+        width: maxRight - minLeft,
+        height: maxBottom - minTop,
+      };
+    };
+
     const updateSelection = () => {
       const selection = editor.getSelection();
       const model = editor.getModel();
@@ -495,35 +560,10 @@ export function QueryEditor({
 
       const refreshedQuery = getSqlQueryAtOffset(model.getValue(), activeQuery.startOffset);
       if (!refreshedQuery) {
-        activeQueryOverlay.style.display = "none";
+        updateOverlayBounds(null);
         return;
       }
-
-      const block = getQueryBlockColumns(model, refreshedQuery);
-      if (!block) {
-        activeQueryOverlay.style.display = "none";
-        return;
-      }
-
-      const startPosition = editor.getScrolledVisiblePosition({
-        lineNumber: block.startLineNumber,
-        column: block.startColumn,
-      });
-      const endPosition = editor.getScrolledVisiblePosition({
-        lineNumber: block.endLineNumber,
-        column: block.endColumn,
-      });
-
-      if (!startPosition || !endPosition) {
-        activeQueryOverlay.style.display = "none";
-        return;
-      }
-
-      activeQueryOverlay.style.display = "block";
-      activeQueryOverlay.style.left = `${startPosition.left}px`;
-      activeQueryOverlay.style.top = `${startPosition.top}px`;
-      activeQueryOverlay.style.width = `${Math.max(8, endPosition.left - startPosition.left)}px`;
-      activeQueryOverlay.style.height = `${Math.max(startPosition.height, endPosition.top + endPosition.height - startPosition.top)}px`;
+      updateOverlayBounds(getQueryOverlayBounds(refreshedQuery));
     };
 
     const scheduleIdleHighlight = () => {

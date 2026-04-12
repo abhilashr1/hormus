@@ -3,6 +3,7 @@ import { z } from "zod";
 export const databaseKindSchema = z.enum(["postgresql", "mysql"]);
 export const authenticationMethodSchema = z.enum(["username_password"]);
 export const queryStatusSchema = z.enum(["idle", "running", "success", "error"]);
+export const outputEntryStatusSchema = z.enum(["success", "error", "info"]);
 
 export const connectionSchema = z.object({
   id: z.string(),
@@ -122,6 +123,11 @@ export const queryExportCsvInputSchema = z.object({
   suggestedFileName: z.string().optional(),
 });
 
+export const schemaHydrateInputSchema = z.object({
+  connectionId: z.string(),
+  schemaName: z.string(),
+});
+
 export type Connection = z.infer<typeof connectionSchema>;
 export type SchemaNode = z.infer<typeof schemaNodeSchema>;
 export type QueryTab = z.infer<typeof queryTabSchema>;
@@ -135,6 +141,7 @@ export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>;
 export type ConnectionDeleteInput = z.infer<typeof connectionDeleteInputSchema>;
 export type QueryRunInput = z.infer<typeof queryRunInputSchema>;
 export type QueryExportCsvInput = z.infer<typeof queryExportCsvInputSchema>;
+export type SchemaHydrateInput = z.infer<typeof schemaHydrateInputSchema>;
 
 export interface HormusDesktopBackend {
   bootstrap: (connectionId?: string) => Promise<DesktopSnapshot>;
@@ -143,7 +150,8 @@ export interface HormusDesktopBackend {
   updateConnection: (input: ConnectionUpdateInput) => Promise<Connection>;
   testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (input: ConnectionDeleteInput) => Promise<{ success: true }>;
-  listSchemas: (connectionId: string) => Promise<SchemaNode[]>;
+  listSchemaIndex: (connectionId: string) => Promise<SchemaNode[]>;
+  hydrateSchema: (input: SchemaHydrateInput) => Promise<SchemaNode | null>;
   listHistory: (connectionId: string) => Promise<QueryHistoryItem[]>;
   getResults: (tabId: string) => Promise<QueryResult | null>;
   runQuery: (input: QueryRunInput) => Promise<{ tab: QueryTab; result: QueryResult | null }>;
@@ -157,7 +165,8 @@ export interface HormusDesktopApi {
   updateConnection: (input: ConnectionUpdateInput) => Promise<Connection>;
   testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (input: ConnectionDeleteInput) => Promise<{ success: true }>;
-  listSchemas: (connectionId: string) => Promise<SchemaNode[]>;
+  listSchemaIndex: (connectionId: string) => Promise<SchemaNode[]>;
+  hydrateSchema: (input: SchemaHydrateInput) => Promise<SchemaNode | null>;
   listHistory: (connectionId: string) => Promise<QueryHistoryItem[]>;
   getResults: (tabId: string) => Promise<QueryResult | null>;
   runQuery: (input: QueryRunInput) => Promise<{ tab: QueryTab; result: QueryResult | null }>;

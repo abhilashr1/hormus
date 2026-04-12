@@ -7,6 +7,7 @@ import type {
   HormusDesktopApi,
   QueryExportCsvInput,
   QueryRunInput,
+  SchemaHydrateInput,
 } from "../src/shared/ipc.js";
 
 const api: HormusDesktopApi = {
@@ -16,7 +17,8 @@ const api: HormusDesktopApi = {
   updateConnection: (input: ConnectionUpdateInput) => ipcRenderer.invoke("connections:update", input),
   testConnection: (input: ConnectionTestInput) => ipcRenderer.invoke("connections:test", input),
   deleteConnection: (input: ConnectionDeleteInput) => ipcRenderer.invoke("connections:delete", input),
-  listSchemas: (connectionId: string) => ipcRenderer.invoke("schemas:list", connectionId),
+  listSchemaIndex: (connectionId: string) => ipcRenderer.invoke("schemas:index", connectionId),
+  hydrateSchema: (input: SchemaHydrateInput) => ipcRenderer.invoke("schemas:hydrate", input),
   listHistory: (connectionId: string) => ipcRenderer.invoke("history:list", connectionId),
   getResults: (tabId: string) => ipcRenderer.invoke("results:get", tabId),
   runQuery: (input: QueryRunInput) => ipcRenderer.invoke("query:run", input),
