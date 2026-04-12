@@ -25,9 +25,20 @@ export const schemaTableSchema = z.object({
   columns: z.number(),
 });
 
+export const schemaViewSchema = z.object({
+  name: z.string(),
+  columns: z.number(),
+});
+
+export const schemaFunctionSchema = z.object({
+  name: z.string(),
+});
+
 export const schemaNodeSchema = z.object({
   name: z.string(),
   tables: z.array(schemaTableSchema),
+  views: z.array(schemaViewSchema),
+  functions: z.array(schemaFunctionSchema),
 });
 
 export const queryTabSchema = z.object({

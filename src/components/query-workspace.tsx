@@ -15,6 +15,8 @@ import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/us
 import type { Connection, SchemaNode } from "@/shared/ipc";
 
 type SchemaTable = SchemaNode["tables"][number];
+type SchemaView = SchemaNode["views"][number];
+type SchemaFunction = SchemaNode["functions"][number];
 type TableContextMenu = {
   x: number;
   y: number;
@@ -68,16 +70,32 @@ export function QueryWorkspace() {
   const [isExportingCsv, setIsExportingCsv] = useState(false);
   const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
   const tableObjects = selectedSchemaNode?.tables ?? [];
+  const viewObjects = selectedSchemaNode?.views ?? [];
+  const functionObjects = selectedSchemaNode?.functions ?? [];
+  const objectFilter = objectSearch.trim().toLowerCase();
   const filteredTableObjects = useMemo(() => {
-    const needle = objectSearch.trim().toLowerCase();
-    if (!needle) {
+    if (!objectFilter) {
       return tableObjects;
     }
 
     return tableObjects.filter((table) =>
-      [table.name, `${table.columns} columns`, table.rowCount].join(" ").toLowerCase().includes(needle),
+      [table.name, `${table.columns} columns`, table.rowCount].join(" ").toLowerCase().includes(objectFilter),
     );
-  }, [objectSearch, tableObjects]);
+  }, [objectFilter, tableObjects]);
+  const filteredViewObjects = useMemo(() => {
+    if (!objectFilter) {
+      return viewObjects;
+    }
+
+    return viewObjects.filter((view) => [view.name, `${view.columns} columns`].join(" ").toLowerCase().includes(objectFilter));
+  }, [objectFilter, viewObjects]);
+  const filteredFunctionObjects = useMemo(() => {
+    if (!objectFilter) {
+      return functionObjects;
+    }
+
+    return functionObjects.filter((fn) => fn.name.toLowerCase().includes(objectFilter));
+  }, [functionObjects, objectFilter]);
 
   useEffect(() => {
     if (!tableContextMenu) {
@@ -148,6 +166,35 @@ export function QueryWorkspace() {
     } finally {
       setIsExportingCsv(false);
     }
+  };
+  const renderSecondaryObjectList = (
+    objects: SchemaView[] | SchemaFunction[],
+    kind: "view" | "function",
+    emptyLabel: string,
+  ) => {
+    if (objects.length === 0) {
+      return <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">{emptyLabel}</div>;
+    }
+
+    return (
+      <div className="space-y-0.5">
+        {objects.map((object) => (
+          <Button
+            key={object.name}
+            type="button"
+            variant="ghost"
+            className="h-auto w-full justify-start rounded-md px-2.5 py-2 text-left"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium">{object.name}</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">
+                {kind === "view" && "columns" in object ? `${object.columns} columns` : "Function"}
+              </p>
+            </div>
+          </Button>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -274,14 +321,20 @@ export function QueryWorkspace() {
 
                   <div>
                     <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Views</div>
-                    <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">No views loaded yet.</div>
+                    {renderSecondaryObjectList(
+                      filteredViewObjects,
+                      "view",
+                      objectSearch.trim() ? "No matching views." : "No views loaded yet.",
+                    )}
                   </div>
 
                   <div>
                     <div className="px-2 pb-1 text-[11px] text-[var(--muted-foreground)]">Functions</div>
-                    <div className="px-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
-                      No functions loaded yet.
-                    </div>
+                    {renderSecondaryObjectList(
+                      filteredFunctionObjects,
+                      "function",
+                      objectSearch.trim() ? "No matching functions." : "No functions loaded yet.",
+                    )}
                   </div>
                 </div>
               </div>
@@ -383,6 +436,9 @@ export function QueryWorkspace() {
                       value={activeTab.sql}
                       onChange={(next) => state.updateTabSql(activeTab.id, next)}
                       onSelectionChange={(selection) => state.updateTabSelection(activeTab.id, selection)}
+                      schemas={state.schemas}
+                      selectedSchema={state.selectedSchema}
+                      connectionKind={activeConnection.kind}
                       onRun={() => {
                         if (canRunQuery) {
                           void state.runTab(activeTab.id);
