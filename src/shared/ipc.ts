@@ -174,4 +174,5 @@ export interface HormusDesktopApi {
   openConnectionWindow: (connectionId?: string) => Promise<void>;
   openCollectionManagerWindow: () => Promise<void>;
   closeCurrentWindow: () => Promise<void>;
+  setWindowTitle: (title: string) => Promise<void>;
 }

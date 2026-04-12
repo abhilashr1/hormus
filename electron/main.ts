@@ -17,16 +17,28 @@ import { createElectronDesktopBackend } from "./backend.js";
 let backend: HormusDesktopBackend | null = null;
 const windows = new Map<string, BrowserWindow>();
 const COLLECTION_MANAGER_KEY = "collection-manager";
-const APP_NAME = "Hormus - Database Client";
+const APP_NAME = "Hormus";
 
 app.setName(APP_NAME);
+
+function buildWindowTitle(connectionName?: string) {
+  return connectionName ? `${connectionName} - ${APP_NAME}` : APP_NAME;
+}
 
 function getAppRoot() {
   return app.isPackaged ? app.getAppPath() : process.cwd();
 }
 
 function getAppIcon() {
-  return nativeImage.createFromPath(path.join(getAppRoot(), "hormus.png"));
+  const appRoot = getAppRoot();
+  const iconPath =
+    process.platform === "darwin"
+      ? path.join(appRoot, app.isPackaged ? "hormus.png" : path.join("build", "icon.png"))
+      : process.platform === "win32"
+        ? path.join(appRoot, "build", "icon.ico")
+        : path.join(appRoot, "build", "icon.png");
+
+  return nativeImage.createFromPath(iconPath);
 }
 
 function getRendererUrl() {
@@ -71,7 +83,7 @@ async function createCollectionManagerWindow() {
     ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
-    title: APP_NAME,
+    title: buildWindowTitle(),
     icon: getAppIcon(),
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0f1115",
@@ -99,6 +111,7 @@ async function createConnectionWindow(connectionId?: string) {
 
   const snapshot = await backend.bootstrap(connectionId);
   const activeConnectionId = snapshot.activeConnectionId;
+  const activeConnection = snapshot.connections.find((connection) => connection.id === activeConnectionId);
   if (!activeConnectionId) {
     return createCollectionManagerWindow();
   }
@@ -112,7 +125,7 @@ async function createConnectionWindow(connectionId?: string) {
     ...getMaximizedWindowBounds(),
     minWidth: 1200,
     minHeight: 760,
-    title: APP_NAME,
+    title: buildWindowTitle(activeConnection?.name),
     icon: getAppIcon(),
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0f1115",
@@ -184,11 +197,14 @@ function registerIpc() {
   handle("window:closeCurrent", async (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
+  handle("window:setTitle", async (event, title: string) => {
+    BrowserWindow.fromWebContents(event.sender)?.setTitle(title);
+  });
 }
 
 async function start() {
   await app.whenReady();
-  if (process.platform === "darwin" && app.dock) {
+  if (process.platform === "darwin" && app.dock && !app.isPackaged) {
     app.dock.setIcon(getAppIcon());
   }
   backend = await createElectronDesktopBackend();

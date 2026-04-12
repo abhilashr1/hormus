@@ -101,6 +101,14 @@ export function QueryWorkspace() {
     };
   }, [tableContextMenu]);
 
+  useEffect(() => {
+    if (!activeConnection) {
+      return;
+    }
+
+    void getDesktopApi().setWindowTitle(`${activeConnection.name} - Hormus`);
+  }, [activeConnection]);
+
   if (!activeConnection || !activeTab) {
     return null;
   }
@@ -182,9 +190,9 @@ export function QueryWorkspace() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[var(--background)] px-3 pb-3 pt-[calc(var(--window-titlebar-height)+0.75rem)] text-[var(--foreground)]">
+    <div className="h-screen overflow-hidden bg-[var(--background)] pt-[var(--window-titlebar-height)] text-[var(--foreground)]">
       <Card
-        className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none border border-white/10 py-0 backdrop-blur-sm"
+        className="flex h-full w-full flex-row gap-0 overflow-hidden rounded-none border-0 py-0 shadow-none backdrop-blur-sm"
         style={{ backgroundColor: "rgba(15, 17, 20, 0.82)" }}
       >
         <div className="flex min-h-0 min-w-0 flex-1">

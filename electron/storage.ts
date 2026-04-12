@@ -27,6 +27,7 @@ interface PersistedDesktopState {
 
 const STORAGE_DIR = "state";
 const STORAGE_FILE = "desktop.json";
+const STORAGE_APP_DIR = "Hormus";
 const DEFAULT_CONNECTION_COLOR = "#2f80ed";
 
 function clone<T>(value: T): T {
@@ -89,7 +90,7 @@ function migrateState(raw: unknown): PersistedDesktopState {
 }
 
 function getStoragePath() {
-  return path.join(app.getPath("userData"), STORAGE_DIR, STORAGE_FILE);
+  return path.join(app.getPath("appData"), STORAGE_APP_DIR, STORAGE_DIR, STORAGE_FILE);
 }
 
 function encodeSecret(secret: string): SecretRecord {
@@ -112,7 +113,11 @@ function decodeSecret(secret?: SecretRecord) {
   }
 
   if (secret.mode === "safeStorage") {
-    return safeStorage.decryptString(Buffer.from(secret.value, "base64"));
+    try {
+      return safeStorage.decryptString(Buffer.from(secret.value, "base64"));
+    } catch {
+      throw new Error("Saved credentials for this connection can’t be decrypted. Re-enter the password in the connection settings.");
+    }
   }
 
   return secret.value;
