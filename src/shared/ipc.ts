@@ -23,11 +23,13 @@ export const schemaTableSchema = z.object({
   name: z.string(),
   rowCount: z.string(),
   columns: z.number(),
+  columnNames: z.array(z.string()),
 });
 
 export const schemaViewSchema = z.object({
   name: z.string(),
   columns: z.number(),
+  columnNames: z.array(z.string()),
 });
 
 export const schemaFunctionSchema = z.object({

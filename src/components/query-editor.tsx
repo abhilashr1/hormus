@@ -8,6 +8,43 @@ import { Card } from "@/components/ui/card";
 
 const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
 const QUALIFIED_SCHEMA_PATTERN = /(?:^|[\s(,])(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.(?:"[^"]*|`[^`]*|[A-Za-z_][\w$]*)?$/;
+const TRAILING_QUALIFIER_PATTERN = /(?:"([^"]*)"|`([^`]*)`|([A-Za-z_][\w$]*))\.\s*$/;
+const SQL_IDENTIFIER_FRAGMENT = /"([^"]|"")*"|`([^`]|``)*`|[A-Za-z_][\w$]*/.source;
+const TABLE_REFERENCE_PATTERN = new RegExp(
+  String.raw`\b(?:from|join|update|into)\s+(${SQL_IDENTIFIER_FRAGMENT})(?:\s*\.\s*(${SQL_IDENTIFIER_FRAGMENT}))?(?:\s+(?:as\s+)?(${SQL_IDENTIFIER_FRAGMENT}))?`,
+  "gi",
+);
+const COLUMN_CONTEXT_PATTERN = /\b(select|where|having|group\s+by|order\s+by|on|set|and|or)\b[\s\S]*$/i;
+const SQL_ALIAS_STOP_WORDS = new Set([
+  "where",
+  "join",
+  "left",
+  "right",
+  "inner",
+  "outer",
+  "full",
+  "cross",
+  "group",
+  "order",
+  "having",
+  "limit",
+  "offset",
+  "union",
+  "on",
+  "using",
+]);
+
+type SchemaObjectWithColumns = {
+  name: string;
+  columnNames: string[];
+};
+
+type QueryTableReference = {
+  schemaName: string;
+  objectName: string;
+  alias?: string;
+  columnNames: string[];
+};
 
 interface QueryEditorProps {
   value: string;
@@ -38,6 +75,68 @@ function quoteIdentifier(kind: Connection["kind"], identifier: string) {
 
 function getSelectedSchemaNode(schemas: SchemaNode[], selectedSchema: string) {
   return schemas.find((schema) => schema.name === selectedSchema) ?? schemas[0];
+}
+
+function unquoteIdentifier(identifier: string | null | undefined) {
+  if (!identifier) {
+    return null;
+  }
+
+  if (identifier.startsWith('"') && identifier.endsWith('"')) {
+    return identifier.slice(1, -1).replace(/""/g, '"');
+  }
+
+  if (identifier.startsWith("`") && identifier.endsWith("`")) {
+    return identifier.slice(1, -1).replace(/``/g, "`");
+  }
+
+  return identifier;
+}
+
+function identifiersEqual(left: string | null | undefined, right: string | null | undefined) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return left === right || left.toLowerCase() === right.toLowerCase();
+}
+
+function findSchemaByName(schemas: SchemaNode[], schemaName: string | null | undefined) {
+  return schemas.find((schema) => identifiersEqual(schema.name, schemaName));
+}
+
+function findSchemaObject(
+  schemas: SchemaNode[],
+  selectedSchema: string,
+  objectName: string | null | undefined,
+  schemaName?: string | null,
+): { schemaName: string; object: SchemaObjectWithColumns } | null {
+  if (!objectName) {
+    return null;
+  }
+
+  const searchSchemas = schemaName
+    ? [findSchemaByName(schemas, schemaName)].filter(Boolean)
+    : [
+        getSelectedSchemaNode(schemas, selectedSchema),
+        ...schemas.filter((schema) => !identifiersEqual(schema.name, selectedSchema)),
+      ];
+
+  for (const schema of searchSchemas) {
+    if (!schema) {
+      continue;
+    }
+
+    const object =
+      schema.tables.find((table) => identifiersEqual(table.name, objectName)) ??
+      schema.views.find((view) => identifiersEqual(view.name, objectName));
+
+    if (object) {
+      return { schemaName: schema.name, object };
+    }
+  }
+
+  return null;
 }
 
 function buildSchemaSuggestions(
@@ -101,9 +200,142 @@ function buildObjectSuggestions(
   return [...tables, ...views, ...functions];
 }
 
+function buildColumnSuggestions(
+  monaco: Parameters<OnMount>[1],
+  columnNames: string[],
+  connectionKind: Connection["kind"],
+  range: IRange,
+  detail: string,
+  sortPrefix = "0",
+) {
+  const seen = new Set<string>();
+
+  return columnNames.flatMap((columnName) => {
+    const key = columnName.toLowerCase();
+    if (seen.has(key)) {
+      return [];
+    }
+
+    seen.add(key);
+    return [
+      {
+        label: columnName,
+        kind: monaco.languages.CompletionItemKind.Field,
+        insertText: quoteIdentifier(connectionKind, columnName),
+        detail,
+        range,
+        sortText: `${sortPrefix}-column-${columnName}`,
+      },
+    ];
+  });
+}
+
 function extractQualifiedSchemaName(linePrefix: string) {
   const match = QUALIFIED_SCHEMA_PATTERN.exec(linePrefix);
   return match ? match[1] ?? match[2] ?? match[3] ?? null : null;
+}
+
+function extractTrailingQualifier(linePrefix: string) {
+  const match = TRAILING_QUALIFIER_PATTERN.exec(linePrefix);
+  return match ? match[1] ?? match[2] ?? match[3] ?? null : null;
+}
+
+function getQueryTextBeforePosition(model: MonacoEditor.ITextModel, position: Position) {
+  const fullText = model.getValue();
+  const cursorOffset = model.getOffsetAt(position);
+  const activeQuery = getSqlQueryAtOffset(fullText, cursorOffset);
+
+  if (!activeQuery) {
+    return { activeQuery: null, queryPrefix: "" };
+  }
+
+  return {
+    activeQuery,
+    queryPrefix: fullText.slice(activeQuery.startOffset, cursorOffset),
+  };
+}
+
+function getQueryTableReferences(
+  queryText: string,
+  schemas: SchemaNode[],
+  selectedSchema: string,
+): QueryTableReference[] {
+  const references: QueryTableReference[] = [];
+
+  for (const match of queryText.matchAll(TABLE_REFERENCE_PATTERN)) {
+    const firstIdentifier = unquoteIdentifier(match[1]);
+    const secondIdentifier = unquoteIdentifier(match[2]);
+    const aliasCandidate = unquoteIdentifier(match[3]);
+    const resolvedObject = secondIdentifier
+      ? findSchemaObject(schemas, selectedSchema, secondIdentifier, firstIdentifier)
+      : findSchemaObject(schemas, selectedSchema, firstIdentifier);
+
+    if (!resolvedObject) {
+      continue;
+    }
+
+    const alias =
+      aliasCandidate && !SQL_ALIAS_STOP_WORDS.has(aliasCandidate.toLowerCase()) ? aliasCandidate : undefined;
+
+    references.push({
+      schemaName: resolvedObject.schemaName,
+      objectName: resolvedObject.object.name,
+      alias,
+      columnNames: resolvedObject.object.columnNames,
+    });
+  }
+
+  return references;
+}
+
+function findColumnsForQualifier(
+  qualifier: string | null,
+  references: QueryTableReference[],
+  schemas: SchemaNode[],
+  selectedSchema: string,
+) {
+  if (!qualifier) {
+    return null;
+  }
+
+  const matchedReference = references.find(
+    (reference) => identifiersEqual(reference.alias, qualifier) || identifiersEqual(reference.objectName, qualifier),
+  );
+  if (matchedReference) {
+    return {
+      columnNames: matchedReference.columnNames,
+      detail: `${matchedReference.alias ? `${matchedReference.alias} • ` : ""}${matchedReference.schemaName}.${matchedReference.objectName}`,
+    };
+  }
+
+  const resolvedObject = findSchemaObject(schemas, selectedSchema, qualifier);
+  if (!resolvedObject) {
+    return null;
+  }
+
+  return {
+    columnNames: resolvedObject.object.columnNames,
+    detail: `${resolvedObject.schemaName}.${resolvedObject.object.name}`,
+  };
+}
+
+function getColumnsForQueryContext(references: QueryTableReference[]) {
+  const seen = new Set<string>();
+  const columns: string[] = [];
+
+  for (const reference of references) {
+    for (const columnName of reference.columnNames) {
+      const key = columnName.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      columns.push(columnName);
+    }
+  }
+
+  return columns;
 }
 
 function getLineVisibleColumns(model: MonacoEditor.ITextModel, lineNumber: number) {
@@ -418,8 +650,31 @@ export function QueryEditor({
           endLineNumber: position.lineNumber,
           endColumn: position.column,
         });
+        const { activeQuery, queryPrefix } = getQueryTextBeforePosition(model, position);
+        const tableReferences = activeQuery
+          ? getQueryTableReferences(activeQuery.text, availableSchemas, activeSchemaName)
+          : [];
+        const trailingQualifier = extractTrailingQualifier(linePrefix);
+        const qualifiedColumns = findColumnsForQualifier(
+          trailingQualifier,
+          tableReferences,
+          availableSchemas,
+          activeSchemaName,
+        );
         const qualifiedSchemaName = extractQualifiedSchemaName(linePrefix);
         const activeSchema = getSelectedSchemaNode(availableSchemas, activeSchemaName);
+
+        if (qualifiedColumns) {
+          return {
+            suggestions: buildColumnSuggestions(
+              monaco,
+              qualifiedColumns.columnNames,
+              activeConnectionKind,
+              range,
+              `Column • ${qualifiedColumns.detail}`,
+            ),
+          };
+        }
 
         if (qualifiedSchemaName) {
           return {
@@ -432,7 +687,18 @@ export function QueryEditor({
           };
         }
 
+        const contextColumns =
+          activeQuery && COLUMN_CONTEXT_PATTERN.test(queryPrefix) ? getColumnsForQueryContext(tableReferences) : [];
         const suggestions = [
+          ...buildColumnSuggestions(
+            monaco,
+            contextColumns,
+            activeConnectionKind,
+            range,
+            tableReferences.length === 1
+              ? `Column • ${tableReferences[0].schemaName}.${tableReferences[0].objectName}`
+              : "Column",
+          ),
           ...buildSchemaSuggestions(monaco, availableSchemas, activeConnectionKind, range),
           ...buildObjectSuggestions(monaco, activeSchema, activeConnectionKind, range, { sortPrefix: "1" }),
           ...availableSchemas.flatMap((schema) =>

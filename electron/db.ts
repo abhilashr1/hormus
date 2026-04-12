@@ -12,7 +12,7 @@ import { prepareStatementsForExecution, QUERY_RESULT_PAGE_SIZE } from "../src/sh
 
 type ConnectionWithSecret = Connection & { password?: string };
 type TestConnectionWithSecret = ConnectionTestInput & { password?: string };
-type SchemaObjectRow = { schema: string; name: string; columns?: string };
+type SchemaObjectColumnRow = { schema: string; name: string; columnName: string; ordinalPosition: number | string };
 type SchemaRoutineRow = { schema: string; name: string };
 
 function normalizeCell(value: unknown): unknown {
@@ -388,31 +388,31 @@ async function listPostgresSchemas(connection: ConnectionWithSecret): Promise<Sc
       order by schema_name
     `);
 
-    const tables = await client.query<SchemaObjectRow>(`
+    const tables = await client.query<SchemaObjectColumnRow>(`
       select c.table_schema as schema,
              c.table_name as name,
-             count(*)::text as columns
+             c.column_name as "columnName",
+             c.ordinal_position as "ordinalPosition"
       from information_schema.columns c
       join information_schema.tables t
         on t.table_schema = c.table_schema
        and t.table_name = c.table_name
       where c.table_schema not in ('information_schema', 'pg_catalog', 'pg_toast')
         and t.table_type = 'BASE TABLE'
-      group by c.table_schema, c.table_name
-      order by c.table_schema, c.table_name
+      order by c.table_schema, c.table_name, c.ordinal_position
     `);
 
-    const views = await client.query<SchemaObjectRow>(`
+    const views = await client.query<SchemaObjectColumnRow>(`
       select c.table_schema as schema,
              c.table_name as name,
-             count(*)::text as columns
+             c.column_name as "columnName",
+             c.ordinal_position as "ordinalPosition"
       from information_schema.columns c
       join information_schema.views v
         on v.table_schema = c.table_schema
        and v.table_name = c.table_name
       where c.table_schema not in ('information_schema', 'pg_catalog', 'pg_toast')
-      group by c.table_schema, c.table_name
-      order by c.table_schema, c.table_name
+      order by c.table_schema, c.table_name, c.ordinal_position
     `);
 
     const functions = await client.query<SchemaRoutineRow>(`
@@ -450,28 +450,28 @@ async function listMySqlSchemas(connection: ConnectionWithSecret): Promise<Schem
     const [tables] = await client.query<mysql.RowDataPacket[]>(`
       select c.table_schema as schema,
              c.table_name as name,
-             count(*) as columns
+             c.column_name as columnName,
+             c.ordinal_position as ordinalPosition
       from information_schema.columns c
       join information_schema.tables t
         on t.table_schema = c.table_schema
        and t.table_name = c.table_name
       where c.table_schema not in ('information_schema', 'mysql', 'performance_schema', 'sys')
         and t.table_type = 'BASE TABLE'
-      group by c.table_schema, c.table_name
-      order by c.table_schema, c.table_name
+      order by c.table_schema, c.table_name, c.ordinal_position
     `);
 
     const [views] = await client.query<mysql.RowDataPacket[]>(`
       select c.table_schema as schema,
              c.table_name as name,
-             count(*) as columns
+             c.column_name as columnName,
+             c.ordinal_position as ordinalPosition
       from information_schema.columns c
       join information_schema.views v
         on v.table_schema = c.table_schema
        and v.table_name = c.table_name
       where c.table_schema not in ('information_schema', 'mysql', 'performance_schema', 'sys')
-      group by c.table_schema, c.table_name
-      order by c.table_schema, c.table_name
+      order by c.table_schema, c.table_name, c.ordinal_position
     `);
 
     const [functions] = await client.query<mysql.RowDataPacket[]>(`
@@ -485,8 +485,8 @@ async function listMySqlSchemas(connection: ConnectionWithSecret): Promise<Schem
 
     return buildSchemaNodes(
       schemas as { name: string }[],
-      normalizeSchemaObjects(tables as { schema: string; name: string; columns: number | string }[]),
-      normalizeSchemaObjects(views as { schema: string; name: string; columns: number | string }[]),
+      normalizeSchemaObjects(tables as SchemaObjectColumnRow[]),
+      normalizeSchemaObjects(views as SchemaObjectColumnRow[]),
       functions as SchemaRoutineRow[],
     );
   } finally {
@@ -494,40 +494,70 @@ async function listMySqlSchemas(connection: ConnectionWithSecret): Promise<Schem
   }
 }
 
-function normalizeSchemaObjects(rows: { schema: string; name: string; columns: number | string }[]): SchemaObjectRow[] {
+function normalizeSchemaObjects(rows: SchemaObjectColumnRow[]): SchemaObjectColumnRow[] {
   return rows.map((row) => ({
-    ...row,
-    columns: String(row.columns),
+    schema: String(row.schema),
+    name: String(row.name),
+    columnName: String(row.columnName),
+    ordinalPosition: typeof row.ordinalPosition === "number" ? row.ordinalPosition : Number(row.ordinalPosition),
   }));
 }
 
 function buildSchemaNodes(
   schemas: { name: string }[],
-  tables: SchemaObjectRow[],
-  views: SchemaObjectRow[],
+  tables: SchemaObjectColumnRow[],
+  views: SchemaObjectColumnRow[],
   functions: SchemaRoutineRow[],
 ): SchemaNode[] {
   const groupedTables = new Map<string, SchemaNode["tables"]>();
   const groupedViews = new Map<string, SchemaNode["views"]>();
   const groupedFunctions = new Map<string, SchemaNode["functions"]>();
 
-  for (const table of tables) {
-    const entry = groupedTables.get(table.schema) ?? [];
-    entry.push({
-      name: table.name,
-      columns: Number(table.columns),
-      rowCount: "",
-    });
-    groupedTables.set(table.schema, entry);
+  const groupSchemaObjects = <T extends SchemaNode["tables"][number] | SchemaNode["views"][number]>(
+    rows: SchemaObjectColumnRow[],
+    buildEntry: (row: SchemaObjectColumnRow, columnNames: string[]) => T,
+  ) => {
+    const grouped = new Map<string, T[]>();
+    const objectRows = new Map<string, SchemaObjectColumnRow[]>();
+
+    for (const row of rows) {
+      const key = `${row.schema}\u0000${row.name}`;
+      const entry = objectRows.get(key) ?? [];
+      entry.push(row);
+      objectRows.set(key, entry);
+    }
+
+    for (const [key, objectColumns] of objectRows.entries()) {
+      const [schemaName] = key.split("\u0000");
+      const target = grouped.get(schemaName) ?? [];
+      const sortedColumns = [...objectColumns]
+        .sort((left, right) => Number(left.ordinalPosition) - Number(right.ordinalPosition))
+        .map((column) => column.columnName);
+      target.push(buildEntry(objectColumns[0], sortedColumns));
+      grouped.set(schemaName, target);
+    }
+
+    return grouped;
+  };
+
+  const groupedTableObjects = groupSchemaObjects(tables, (row, columnNames) => ({
+    name: row.name,
+    columns: columnNames.length,
+    columnNames,
+    rowCount: "",
+  }));
+  const groupedViewObjects = groupSchemaObjects(views, (row, columnNames) => ({
+    name: row.name,
+    columns: columnNames.length,
+    columnNames,
+  }));
+
+  for (const [schemaName, entries] of groupedTableObjects.entries()) {
+    groupedTables.set(schemaName, entries);
   }
 
-  for (const view of views) {
-    const entry = groupedViews.get(view.schema) ?? [];
-    entry.push({
-      name: view.name,
-      columns: Number(view.columns ?? 0),
-    });
-    groupedViews.set(view.schema, entry);
+  for (const [schemaName, entries] of groupedViewObjects.entries()) {
+    groupedViews.set(schemaName, entries);
   }
 
   for (const fn of functions) {
