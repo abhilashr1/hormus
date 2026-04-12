@@ -322,44 +322,6 @@ function getColumnsForQueryContext(references: QueryTableReference[]) {
   return columns;
 }
 
-function getLineVisibleColumns(model: MonacoEditor.ITextModel, lineNumber: number) {
-  const content = model.getLineContent(lineNumber);
-  const firstNonWhitespaceIndex = content.search(/\S/);
-  if (firstNonWhitespaceIndex === -1) {
-    return null;
-  }
-
-  const trailingWhitespaceLength = content.match(/\s*$/)?.[0].length ?? 0;
-  return {
-    startColumn: firstNonWhitespaceIndex + 1,
-    endColumn: Math.max(firstNonWhitespaceIndex + 2, content.length - trailingWhitespaceLength + 1),
-  };
-}
-
-function getQueryBlockColumns(model: MonacoEditor.ITextModel, query: SqlQuerySegment) {
-  const start = model.getPositionAt(query.startOffset);
-  const end = model.getPositionAt(query.endOffset);
-  const lineBounds = [];
-
-  for (let lineNumber = start.lineNumber; lineNumber <= end.lineNumber; lineNumber += 1) {
-    const bounds = getLineVisibleColumns(model, lineNumber);
-    if (bounds) {
-      lineBounds.push(bounds);
-    }
-  }
-
-  if (lineBounds.length === 0) {
-    return null;
-  }
-
-  return {
-    startLineNumber: start.lineNumber,
-    endLineNumber: end.lineNumber,
-    startColumn: Math.min(...lineBounds.map((bounds) => bounds.startColumn)),
-    endColumn: Math.max(...lineBounds.map((bounds) => bounds.endColumn)),
-  };
-}
-
 export function QueryEditor({
   value,
   onChange,

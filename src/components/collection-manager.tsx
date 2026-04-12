@@ -180,10 +180,10 @@ export function CollectionManager() {
     });
   };
 
-  const validate = () => {
+  const validateForm = ({ requireName }: { requireName: boolean }) => {
     const nextErrors: FormErrors = {};
 
-    if (!form.name.trim()) {
+    if (requireName && !form.name.trim()) {
       nextErrors.name = "Connection name is required.";
     }
 
@@ -211,35 +211,8 @@ export function CollectionManager() {
     return nextErrors;
   };
 
-  const validateConnectionFields = () => {
-    const nextErrors: FormErrors = {};
-
-    if (!form.host.trim()) {
-      nextErrors.host = "Host is required.";
-    }
-
-    if (!form.port.trim()) {
-      nextErrors.port = "Port is required.";
-    } else {
-      const port = Number(form.port);
-      if (!Number.isInteger(port) || port <= 0) {
-        nextErrors.port = "Port must be a positive integer.";
-      }
-    }
-
-    if (!form.username.trim()) {
-      nextErrors.username = "User is required.";
-    }
-
-    if (!form.database.trim()) {
-      nextErrors.database = "Default database is required.";
-    }
-
-    return nextErrors;
-  };
-
   const testConnection = async () => {
-    const nextErrors = validateConnectionFields();
+    const nextErrors = validateForm({ requireName: false });
     setErrors((current) => ({ ...current, ...nextErrors }));
     setSubmitError("");
     setTestMessage(null);
@@ -273,7 +246,7 @@ export function CollectionManager() {
   };
 
   const submit = async () => {
-    const nextErrors = validate();
+    const nextErrors = validateForm({ requireName: true });
     setErrors(nextErrors);
     setSubmitError("");
     if (Object.keys(nextErrors).length > 0) {

@@ -1,4 +1,4 @@
-import type { Connection, ConnectionTestInput, QueryRunInput } from "../src/shared/ipc.js";
+import type { Connection, QueryRunInput } from "../src/shared/ipc.js";
 import { prepareStatementsForExecution } from "../src/shared/query.js";
 import { getDatabaseProvider } from "./providers/index.js";
 import type { ConnectionWithSecret, TestConnectionWithSecret } from "./providers/types.js";
