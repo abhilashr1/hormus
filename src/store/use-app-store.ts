@@ -59,7 +59,7 @@ interface AppState {
   renameTab: (id: string, title: string) => void;
   closeTab: (id: string) => Promise<void>;
   createTab: (input?: CreateTabInput) => Promise<void>;
-  runTab: (id: string) => Promise<void>;
+  runTab: (id: string, selectionOverride?: string) => Promise<void>;
   runTabPage: (id: string, pageOffset: number) => Promise<void>;
 }
 
@@ -413,7 +413,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  runTab: async (id) => {
+  runTab: async (id, selectionOverride) => {
     const state = get();
     const tab = state.queryTabs.find((item) => item.id === id);
     if (!tab) {
@@ -421,13 +421,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set({ isRunningQuery: true });
-    const executedSql = tab.selection ?? tab.sql;
+    const executedSql = selectionOverride ?? tab.selection ?? tab.sql;
     try {
       const response = await getDesktopApi().runQuery({
         connectionId: state.activeConnectionId,
         tabId: id,
         sql: tab.sql,
-        selection: tab.selection,
+        selection: selectionOverride ?? tab.selection,
         pageOffset: 0,
       });
 

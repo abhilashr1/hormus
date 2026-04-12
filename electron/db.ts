@@ -8,7 +8,7 @@ import type {
   QueryResult,
   SchemaNode,
 } from "../src/shared/ipc.js";
-import { QUERY_RESULT_PAGE_SIZE } from "../src/shared/query.js";
+import { prepareStatementsForExecution, QUERY_RESULT_PAGE_SIZE } from "../src/shared/query.js";
 
 type ConnectionWithSecret = Connection & { password?: string };
 type TestConnectionWithSecret = ConnectionTestInput & { password?: string };
@@ -82,129 +82,6 @@ function rowsToCsv(rows: Record<string, unknown>[], columns: string[]) {
 
 function normalizePageOffset(pageOffset?: number) {
   return Math.max(0, pageOffset ?? 0);
-}
-
-function stripSqlComments(sql: string) {
-  let output = "";
-  let index = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  while (index < sql.length) {
-    const char = sql[index];
-    const next = sql[index + 1];
-
-    if (!inDoubleQuote && char === "'") {
-      output += char;
-      if (inSingleQuote && next === "'") {
-        output += next;
-        index += 2;
-        continue;
-      }
-      inSingleQuote = !inSingleQuote;
-      index += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && char === "\"") {
-      output += char;
-      if (inDoubleQuote && next === "\"") {
-        output += next;
-        index += 2;
-        continue;
-      }
-      inDoubleQuote = !inDoubleQuote;
-      index += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "-" && next === "-") {
-      while (index < sql.length && sql[index] !== "\n") {
-        index += 1;
-      }
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === "/" && next === "*") {
-      output += " ";
-      index += 2;
-      while (index < sql.length && !(sql[index] === "*" && sql[index + 1] === "/")) {
-        index += 1;
-      }
-      index = Math.min(index + 2, sql.length);
-      continue;
-    }
-
-    output += char;
-    index += 1;
-  }
-
-  return output;
-}
-
-function stripTrailingSemicolon(sql: string) {
-  return sql.trim().replace(/;+$/, "");
-}
-
-function splitSqlStatements(sql: string) {
-  const statements: string[] = [];
-  let current = "";
-  let index = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  while (index < sql.length) {
-    const char = sql[index];
-    const next = sql[index + 1];
-
-    if (!inDoubleQuote && char === "'") {
-      current += char;
-      if (inSingleQuote && next === "'") {
-        current += next;
-        index += 2;
-        continue;
-      }
-      inSingleQuote = !inSingleQuote;
-      index += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && char === "\"") {
-      current += char;
-      if (inDoubleQuote && next === "\"") {
-        current += next;
-        index += 2;
-        continue;
-      }
-      inDoubleQuote = !inDoubleQuote;
-      index += 1;
-      continue;
-    }
-
-    if (!inSingleQuote && !inDoubleQuote && char === ";") {
-      const statement = current.trim();
-      if (statement) {
-        statements.push(statement);
-      }
-      current = "";
-      index += 1;
-      continue;
-    }
-
-    current += char;
-    index += 1;
-  }
-
-  const statement = current.trim();
-  if (statement) {
-    statements.push(statement);
-  }
-
-  return statements;
-}
-
-function prepareStatementsForExecution(sql: string) {
-  return splitSqlStatements(stripSqlComments(sql));
 }
 
 function isPaginatableQuery(sql: string) {

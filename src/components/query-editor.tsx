@@ -1,8 +1,9 @@
 import Editor from "@monaco-editor/react";
 import type { OnMount } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
-import type { editor as MonacoEditor, Position } from "monaco-editor";
+import type { editor as MonacoEditor, IRange, Position } from "monaco-editor";
 import type { Connection, SchemaNode } from "@/shared/ipc";
+import { getSqlQueryAtOffset, parseSqlQueries, type SqlQuerySegment } from "@/shared/query";
 import { Card } from "@/components/ui/card";
 
 const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
@@ -13,6 +14,7 @@ interface QueryEditorProps {
   onChange: (value: string) => void;
   onSelectionChange?: (selection: string) => void;
   onRun?: () => void;
+  onRunQuery?: (query: string) => void;
   schemas: SchemaNode[];
   selectedSchema: string;
   connectionKind: Connection["kind"];
@@ -42,7 +44,7 @@ function buildSchemaSuggestions(
   monaco: Parameters<OnMount>[1],
   schemas: SchemaNode[],
   connectionKind: Connection["kind"],
-  range: import("monaco-editor").IRange,
+  range: IRange,
 ) {
   return schemas.map((schema) => ({
     label: schema.name,
@@ -58,7 +60,7 @@ function buildObjectSuggestions(
   monaco: Parameters<OnMount>[1],
   schema: SchemaNode | undefined,
   connectionKind: Connection["kind"],
-  range: import("monaco-editor").IRange,
+  range: IRange,
   options?: { includeSchemaPrefix?: boolean; sortPrefix?: string },
 ) {
   if (!schema) {
@@ -104,16 +106,56 @@ function extractQualifiedSchemaName(linePrefix: string) {
   return match ? match[1] ?? match[2] ?? match[3] ?? null : null;
 }
 
+function getLineVisibleColumns(model: MonacoEditor.ITextModel, lineNumber: number) {
+  const content = model.getLineContent(lineNumber);
+  const firstNonWhitespaceIndex = content.search(/\S/);
+  if (firstNonWhitespaceIndex === -1) {
+    return null;
+  }
+
+  const trailingWhitespaceLength = content.match(/\s*$/)?.[0].length ?? 0;
+  return {
+    startColumn: firstNonWhitespaceIndex + 1,
+    endColumn: Math.max(firstNonWhitespaceIndex + 2, content.length - trailingWhitespaceLength + 1),
+  };
+}
+
+function getQueryBlockColumns(model: MonacoEditor.ITextModel, query: SqlQuerySegment) {
+  const start = model.getPositionAt(query.startOffset);
+  const end = model.getPositionAt(query.endOffset);
+  const lineBounds = [];
+
+  for (let lineNumber = start.lineNumber; lineNumber <= end.lineNumber; lineNumber += 1) {
+    const bounds = getLineVisibleColumns(model, lineNumber);
+    if (bounds) {
+      lineBounds.push(bounds);
+    }
+  }
+
+  if (lineBounds.length === 0) {
+    return null;
+  }
+
+  return {
+    startLineNumber: start.lineNumber,
+    endLineNumber: end.lineNumber,
+    startColumn: Math.min(...lineBounds.map((bounds) => bounds.startColumn)),
+    endColumn: Math.max(...lineBounds.map((bounds) => bounds.endColumn)),
+  };
+}
+
 export function QueryEditor({
   value,
   onChange,
   onSelectionChange,
   onRun,
+  onRunQuery,
   schemas,
   selectedSchema,
   connectionKind,
 }: QueryEditorProps) {
   const onRunRef = useRef(onRun);
+  const onRunQueryRef = useRef(onRunQuery);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const completionContextRef = useRef({
     schemas,
@@ -124,6 +166,10 @@ export function QueryEditor({
   useEffect(() => {
     onRunRef.current = onRun;
   }, [onRun]);
+
+  useEffect(() => {
+    onRunQueryRef.current = onRunQuery;
+  }, [onRunQuery]);
 
   useEffect(() => {
     onSelectionChangeRef.current = onSelectionChange;
@@ -138,6 +184,18 @@ export function QueryEditor({
   }, [connectionKind, schemas, selectedSchema]);
 
   const handleMount: OnMount = (editor, monaco) => {
+    let runArrowDecorationIds: string[] = [];
+    let idleHighlightTimer: number | null = null;
+    let hoveredQuery: SqlQuerySegment | null = null;
+    let idleQuery: SqlQuerySegment | null = null;
+    let querySegments: SqlQuerySegment[] = [];
+    const editorDomNode = editor.getDomNode();
+    const activeQueryOverlay = document.createElement("div");
+    activeQueryOverlay.className = "hormus-active-query-overlay";
+    if (editorDomNode) {
+      editorDomNode.appendChild(activeQueryOverlay);
+    }
+
     const updateSelection = () => {
       const selection = editor.getSelection();
       const model = editor.getModel();
@@ -149,11 +207,196 @@ export function QueryEditor({
       onSelectionChangeRef.current?.(model.getValueInRange(selection));
     };
 
+    const clearIdleTimer = () => {
+      if (idleHighlightTimer !== null) {
+        window.clearTimeout(idleHighlightTimer);
+        idleHighlightTimer = null;
+      }
+    };
+
+    const runQuerySegment = (query: SqlQuerySegment) => {
+      const model = editor.getModel();
+      if (!model) {
+        return;
+      }
+
+      const start = model.getPositionAt(query.startOffset);
+      const end = model.getPositionAt(query.endOffset);
+      const selection = new monaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column);
+      editor.setSelection(selection);
+      editor.revealRangeInCenter(selection);
+      onSelectionChangeRef.current?.(query.text);
+      onRunQueryRef.current?.(query.text);
+    };
+
+    const updateRunArrowDecorations = () => {
+      const model = editor.getModel();
+      if (!model) {
+        runArrowDecorationIds = editor.deltaDecorations(runArrowDecorationIds, []);
+        return;
+      }
+
+      querySegments = parseSqlQueries(model.getValue());
+      const decorations = querySegments.map((query) => {
+        const start = model.getPositionAt(query.startOffset);
+        return {
+          range: new monaco.Range(start.lineNumber, 1, start.lineNumber, 1),
+          options: {
+            isWholeLine: true,
+            glyphMarginClassName: "hormus-query-run-glyph",
+            glyphMarginHoverMessage: { value: "Run query" },
+            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        };
+      });
+
+      runArrowDecorationIds = editor.deltaDecorations(runArrowDecorationIds, decorations);
+    };
+
+    const updateActiveQueryHighlight = () => {
+      const model = editor.getModel();
+      const activeQuery = hoveredQuery ?? idleQuery;
+      if (!model || !activeQuery) {
+        activeQueryOverlay.style.display = "none";
+        return;
+      }
+
+      const refreshedQuery = getSqlQueryAtOffset(model.getValue(), activeQuery.startOffset);
+      if (!refreshedQuery) {
+        activeQueryOverlay.style.display = "none";
+        return;
+      }
+
+      const block = getQueryBlockColumns(model, refreshedQuery);
+      if (!block) {
+        activeQueryOverlay.style.display = "none";
+        return;
+      }
+
+      const startPosition = editor.getScrolledVisiblePosition({
+        lineNumber: block.startLineNumber,
+        column: block.startColumn,
+      });
+      const endPosition = editor.getScrolledVisiblePosition({
+        lineNumber: block.endLineNumber,
+        column: block.endColumn,
+      });
+
+      if (!startPosition || !endPosition) {
+        activeQueryOverlay.style.display = "none";
+        return;
+      }
+
+      activeQueryOverlay.style.display = "block";
+      activeQueryOverlay.style.left = `${startPosition.left}px`;
+      activeQueryOverlay.style.top = `${startPosition.top}px`;
+      activeQueryOverlay.style.width = `${Math.max(8, endPosition.left - startPosition.left)}px`;
+      activeQueryOverlay.style.height = `${Math.max(startPosition.height, endPosition.top + endPosition.height - startPosition.top)}px`;
+    };
+
+    const scheduleIdleHighlight = () => {
+      const model = editor.getModel();
+      const position = editor.getPosition();
+      clearIdleTimer();
+      idleQuery = null;
+      updateActiveQueryHighlight();
+
+      if (!model || !position) {
+        return;
+      }
+
+      const candidateQuery = getSqlQueryAtOffset(model.getValue(), model.getOffsetAt(position));
+      if (!candidateQuery) {
+        return;
+      }
+
+      idleHighlightTimer = window.setTimeout(() => {
+        idleQuery = candidateQuery;
+        updateActiveQueryHighlight();
+      }, 500);
+    };
+
+    const setHoveredQuery = (query: SqlQuerySegment | null) => {
+      hoveredQuery = query;
+      updateActiveQueryHighlight();
+    };
+
+    const getActiveQuery = () => hoveredQuery ?? idleQuery;
+
+    const getQueryAtLine = (lineNumber: number) => {
+      const model = editor.getModel();
+      if (!model) {
+        return null;
+      }
+
+      return querySegments.find((query) => model.getPositionAt(query.startOffset).lineNumber === lineNumber) ?? null;
+    };
+
     updateSelection();
+    updateRunArrowDecorations();
+    scheduleIdleHighlight();
     editor.onDidChangeCursorSelection(updateSelection);
+    editor.onDidChangeCursorPosition(() => {
+      scheduleIdleHighlight();
+    });
+    editor.onDidChangeModelContent(() => {
+      hoveredQuery = null;
+      updateRunArrowDecorations();
+      scheduleIdleHighlight();
+    });
+    editor.onDidScrollChange(() => {
+      updateActiveQueryHighlight();
+    });
+    editor.onDidLayoutChange(() => {
+      updateActiveQueryHighlight();
+    });
+    editor.onMouseMove((event) => {
+      const model = editor.getModel();
+      const position = event.target.position;
+      if (!model || !position || event.target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT) {
+        setHoveredQuery(null);
+        return;
+      }
+
+      setHoveredQuery(getSqlQueryAtOffset(model.getValue(), model.getOffsetAt(position)));
+    });
+    editor.onMouseLeave(() => {
+      setHoveredQuery(null);
+    });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       updateSelection();
+      const activeQuery = getActiveQuery();
+      if (activeQuery) {
+        runQuerySegment(activeQuery);
+        return;
+      }
+
       onRunRef.current?.();
+    });
+    editor.onMouseDown((event) => {
+      const model = editor.getModel();
+      const position = event.target.position;
+      const isCommandClick = event.event.metaKey || event.event.ctrlKey;
+      const isGlyphClick = event.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
+
+      if (isGlyphClick && position) {
+        const query = getQueryAtLine(position.lineNumber);
+        if (query) {
+          runQuerySegment(query);
+        }
+        return;
+      }
+
+      if (!model || !position || !isCommandClick || event.target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT) {
+        return;
+      }
+
+      const activeQuery = getSqlQueryAtOffset(model.getValue(), model.getOffsetAt(position));
+      if (!activeQuery) {
+        return;
+      }
+
+      runQuerySegment(activeQuery);
     });
 
     const completionProvider = monaco.languages.registerCompletionItemProvider("sql", {
@@ -205,6 +448,9 @@ export function QueryEditor({
     });
 
     editor.onDidDispose(() => {
+      clearIdleTimer();
+      runArrowDecorationIds = [];
+      activeQueryOverlay.remove();
       completionProvider.dispose();
     });
   };
@@ -227,6 +473,7 @@ export function QueryEditor({
           automaticLayout: true,
           roundedSelection: false,
           lineNumbersMinChars: 3,
+          glyphMargin: true,
           overviewRulerBorder: false,
           hideCursorInOverviewRuler: true,
           quickSuggestions: {

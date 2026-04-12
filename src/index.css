@@ -185,3 +185,34 @@ select {
   color: var(--muted-foreground);
   font-size: 12px;
 }
+
+.monaco-editor .hormus-active-query-overlay {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  z-index: 4;
+  border: 1px solid rgba(85, 194, 122, 0.9);
+  background: rgba(85, 194, 122, 0.06);
+  box-sizing: border-box;
+}
+
+.monaco-editor .glyph-margin {
+  cursor: default;
+}
+
+.monaco-editor .hormus-query-run-glyph {
+  cursor: pointer;
+}
+
+.monaco-editor .hormus-query-run-glyph::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 6px auto 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid #55c27a;
+  filter: drop-shadow(0 0 3px rgba(85, 194, 122, 0.3));
+  opacity: 0.92;
+}

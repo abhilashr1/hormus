@@ -439,6 +439,11 @@ export function QueryWorkspace() {
                       schemas={state.schemas}
                       selectedSchema={state.selectedSchema}
                       connectionKind={activeConnection.kind}
+                      onRunQuery={(query) => {
+                        if (query.trim()) {
+                          void state.runTab(activeTab.id, query);
+                        }
+                      }}
                       onRun={() => {
                         if (canRunQuery) {
                           void state.runTab(activeTab.id);
