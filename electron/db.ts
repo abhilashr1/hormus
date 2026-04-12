@@ -7,7 +7,6 @@ import type {
   QueryRunInput,
   QueryResult,
   SchemaNode,
-  TableDescription,
 } from "../src/shared/ipc.js";
 import { QUERY_RESULT_PAGE_SIZE } from "../src/shared/query.js";
 
@@ -63,6 +62,20 @@ function mapRows(rows: Record<string, unknown>[]) {
   return rows.map((row) =>
     Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeCell(value)])),
   );
+}
+
+function valueToClipboardText(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function csvEscape(value: string) {
+  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function rowsToCsv(rows: Record<string, unknown>[], columns: string[]) {
+  const header = columns.map(csvEscape).join(",");
+  const body = rows.map((row) => columns.map((column) => csvEscape(valueToClipboardText(row[column]))).join(",")).join("\n");
+  return body ? `${header}\n${body}` : `${header}\n`;
 }
 
 function normalizePageOffset(pageOffset?: number) {
@@ -303,6 +316,46 @@ async function testPostgres(connection: TestConnectionWithSecret): Promise<Conne
   }
 }
 
+async function queryPostgresAllRows(connection: ConnectionWithSecret, statements: string[]): Promise<QueryResult> {
+  const client = new Client({
+    host: connection.host,
+    port: connection.port || defaultPort(connection.kind),
+    user: connection.username,
+    password: connection.password,
+    database: connection.database,
+    application_name: "Hormus",
+  });
+
+  const startedAt = Date.now();
+  await client.connect();
+
+  try {
+    for (const statement of statements.slice(0, -1)) {
+      await client.query(statement);
+    }
+
+    const lastStatement = statements.at(-1);
+    if (!lastStatement) {
+      return {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    const response = await client.query(lastStatement);
+    return {
+      columns: response.fields.map((field: { name: string }) => field.name),
+      rows: mapRows(response.rows as Record<string, unknown>[]),
+      rowCount: typeof response.rowCount === "number" ? response.rowCount : response.rows.length,
+      durationMs: Date.now() - startedAt,
+    };
+  } finally {
+    await client.end();
+  }
+}
+
 async function queryMySql(connection: ConnectionWithSecret, statements: string[], pageOffset?: number): Promise<QueryResult> {
   const client = await mysql.createConnection({
     host: connection.host,
@@ -383,6 +436,52 @@ async function testMySql(connection: TestConnectionWithSecret): Promise<Connecti
     await client.ping();
     return {
       success: true,
+      durationMs: Date.now() - startedAt,
+    };
+  } finally {
+    await client.end();
+  }
+}
+
+async function queryMySqlAllRows(connection: ConnectionWithSecret, statements: string[]): Promise<QueryResult> {
+  const client = await mysql.createConnection({
+    host: connection.host,
+    port: connection.port || defaultPort(connection.kind),
+    user: connection.username,
+    password: connection.password,
+    database: connection.database,
+    multipleStatements: true,
+  });
+
+  const startedAt = Date.now();
+
+  try {
+    for (const statement of statements.slice(0, -1)) {
+      await client.query(statement);
+    }
+
+    const lastStatement = statements.at(-1);
+    if (!lastStatement) {
+      return {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    const [rows, fields] = await client.query(lastStatement);
+    const rowArray = Array.isArray(rows) ? rows : [];
+    const lastRows = Array.isArray(rowArray[0]) ? (rowArray.at(-1) as Record<string, unknown>[]) : (rowArray as Record<string, unknown>[]);
+    const lastFields = Array.isArray(fields?.[0]) ? fields.at(-1) ?? [] : fields ?? [];
+    const columns = Array.isArray(lastFields)
+      ? lastFields.map((field: { name: string }) => field.name)
+      : Object.keys(lastRows[0] ?? {});
+
+    return {
+      columns,
+      rows: mapRows(lastRows),
+      rowCount: lastRows.length,
       durationMs: Date.now() - startedAt,
     };
   } finally {
@@ -495,83 +594,6 @@ function buildSchemaNodes(
   }));
 }
 
-async function describePostgresTable(connection: ConnectionWithSecret, schema: string, table: string): Promise<TableDescription> {
-  const client = new Client({
-    host: connection.host,
-    port: connection.port || defaultPort(connection.kind),
-    user: connection.username,
-    password: connection.password,
-    database: connection.database,
-    application_name: "Hormus",
-  });
-
-  await client.connect();
-
-  try {
-    const response = await client.query<{ name: string; type: string; nullable: "YES" | "NO" }>(
-      `
-        select column_name as name,
-               data_type as type,
-               is_nullable as nullable
-        from information_schema.columns
-        where table_schema = $1
-          and table_name = $2
-        order by ordinal_position
-      `,
-      [schema, table],
-    );
-
-    return {
-      schema,
-      table,
-      columns: response.rows.map((column) => ({
-        name: column.name,
-        type: column.type,
-        nullable: column.nullable === "YES",
-      })),
-    };
-  } finally {
-    await client.end();
-  }
-}
-
-async function describeMySqlTable(connection: ConnectionWithSecret, schema: string, table: string): Promise<TableDescription> {
-  const client = await mysql.createConnection({
-    host: connection.host,
-    port: connection.port || defaultPort(connection.kind),
-    user: connection.username,
-    password: connection.password,
-    database: connection.database,
-  });
-
-  try {
-    const [rows] = await client.query<mysql.RowDataPacket[]>(
-      `
-        select column_name as name,
-               data_type as type,
-               is_nullable as nullable
-        from information_schema.columns
-        where table_schema = ?
-          and table_name = ?
-        order by ordinal_position
-      `,
-      [schema, table],
-    );
-
-    return {
-      schema,
-      table,
-      columns: rows.map((column: mysql.RowDataPacket) => ({
-        name: String(column.name),
-        type: String(column.type),
-        nullable: String(column.nullable) === "YES",
-      })),
-    };
-  } finally {
-    await client.end();
-  }
-}
-
 export async function runLiveQuery(connection: ConnectionWithSecret, sql: string, pageOffset?: QueryRunInput["pageOffset"]) {
   const statements = prepareStatementsForExecution(sql);
   for (const statement of statements) {
@@ -590,8 +612,16 @@ export async function listLiveSchemas(connection: ConnectionWithSecret) {
   return connection.kind === "postgresql" ? listPostgresSchemas(connection) : listMySqlSchemas(connection);
 }
 
-export async function describeLiveTable(connection: ConnectionWithSecret, schema: string, table: string) {
-  return connection.kind === "postgresql"
-    ? describePostgresTable(connection, schema, table)
-    : describeMySqlTable(connection, schema, table);
+export async function exportLiveQueryToCsv(connection: ConnectionWithSecret, sql: string) {
+  const statements = prepareStatementsForExecution(sql);
+  for (const statement of statements) {
+    assertReadAllowed(connection, statement);
+  }
+
+  const result =
+    connection.kind === "postgresql"
+      ? await queryPostgresAllRows(connection, statements)
+      : await queryMySqlAllRows(connection, statements);
+
+  return rowsToCsv(result.rows as Record<string, unknown>[], result.columns);
 }

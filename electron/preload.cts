@@ -4,9 +4,8 @@ import type {
   ConnectionDeleteInput,
   ConnectionTestInput,
   ConnectionUpdateInput,
-  DescribeTableInput,
   HormusDesktopApi,
-  ListTablesInput,
+  QueryExportCsvInput,
   QueryRunInput,
 } from "../src/shared/ipc.js";
 
@@ -18,11 +17,10 @@ const api: HormusDesktopApi = {
   testConnection: (input: ConnectionTestInput) => ipcRenderer.invoke("connections:test", input),
   deleteConnection: (input: ConnectionDeleteInput) => ipcRenderer.invoke("connections:delete", input),
   listSchemas: (connectionId: string) => ipcRenderer.invoke("schemas:list", connectionId),
-  listTables: (input: ListTablesInput) => ipcRenderer.invoke("tables:list", input),
-  describeTable: (input: DescribeTableInput) => ipcRenderer.invoke("tables:describe", input),
   listHistory: (connectionId: string) => ipcRenderer.invoke("history:list", connectionId),
   getResults: (tabId: string) => ipcRenderer.invoke("results:get", tabId),
   runQuery: (input: QueryRunInput) => ipcRenderer.invoke("query:run", input),
+  exportQueryCsv: (input: QueryExportCsvInput) => ipcRenderer.invoke("query:exportCsv", input),
   openConnectionWindow: (connectionId?: string) => ipcRenderer.invoke("window:openConnection", connectionId),
   openCollectionManagerWindow: () => ipcRenderer.invoke("window:openCollectionManager"),
   closeCurrentWindow: () => ipcRenderer.invoke("window:closeCurrent"),

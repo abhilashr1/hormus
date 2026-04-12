@@ -7,14 +7,12 @@ import type {
   ConnectionTestInput,
   ConnectionTestResult,
   ConnectionUpdateInput,
-  DesktopSnapshot,
   QueryHistoryItem,
   QueryResult,
   QueryTab,
   SchemaNode,
 } from "@/shared/ipc";
 
-type SidebarView = DesktopSnapshot["sidebarView"];
 type AppScreen = "collection-manager" | "workspace";
 
 interface QueryOutputEntry {
@@ -35,7 +33,6 @@ interface AppState {
   currentScreen: AppScreen;
   connections: Connection[];
   activeConnectionId: string;
-  sidebarView: SidebarView;
   queryTabs: QueryTab[];
   activeTabId: string;
   schemas: SchemaNode[];
@@ -55,7 +52,6 @@ interface AppState {
   updateConnection: (input: ConnectionUpdateInput) => Promise<void>;
   testConnection: (input: ConnectionTestInput) => Promise<ConnectionTestResult>;
   deleteConnection: (id: string) => Promise<void>;
-  setSidebarView: (view: SidebarView) => void;
   setSelectedSchema: (schema: string) => void;
   setActiveTab: (id: string) => Promise<void>;
   updateTabSql: (id: string, sql: string) => void;
@@ -100,11 +96,11 @@ function loadPersistedState() {
 
   const raw = window.localStorage.getItem(STORAGE_KEY);
   return raw
-    ? (JSON.parse(raw) as Partial<Pick<AppState, "activeConnectionId" | "activeTabId" | "queryTabs" | "sidebarView">>)
+    ? (JSON.parse(raw) as Partial<Pick<AppState, "activeConnectionId" | "activeTabId" | "queryTabs">>)
     : null;
 }
 
-function persist(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "activeTabId" | "sidebarView">) {
+function persist(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "activeTabId">) {
   if (typeof window === "undefined") {
     return;
   }
@@ -152,7 +148,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentScreen: getWindowScreen(),
   connections: [],
   activeConnectionId: saved?.activeConnectionId ?? "",
-  sidebarView: saved?.sidebarView ?? "schemas",
   queryTabs: saved?.queryTabs ?? [],
   activeTabId: saved?.activeTabId ?? "",
   schemas: [],
@@ -178,7 +173,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentScreen: screen,
       connections: snapshot.connections,
       activeConnectionId,
-      sidebarView: snapshot.sidebarView,
       queryTabs: tabs.queryTabs,
       activeTabId: tabs.activeTabId,
       queryError: null,
@@ -212,7 +206,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeConnectionId,
       activeTabId: tabs.activeTabId,
       queryTabs: tabs.queryTabs,
-      sidebarView: snapshot.sidebarView,
     });
   },
 
@@ -250,7 +243,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeConnectionId: connectionId,
       activeTabId: tabs.activeTabId,
       queryTabs: tabs.queryTabs,
-      sidebarView: get().sidebarView,
     });
   },
 
@@ -297,18 +289,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  setSidebarView: (view) =>
-    set((state) => {
-      const next = { ...state, sidebarView: view };
-      persist({
-        activeConnectionId: next.activeConnectionId,
-        activeTabId: next.activeTabId,
-        queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
-      });
-      return next;
-    }),
-
   setSelectedSchema: (schema) => set({ selectedSchema: schema }),
 
   setActiveTab: async (id) => {
@@ -319,7 +299,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeConnectionId: next.activeConnectionId,
         activeTabId: next.activeTabId,
         queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
       });
       return next;
     });
@@ -333,7 +312,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeConnectionId: next.activeConnectionId,
         activeTabId: next.activeTabId,
         queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
       });
       return next;
     }),
@@ -360,7 +338,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeConnectionId: next.activeConnectionId,
         activeTabId: next.activeTabId,
         queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
       });
       return next;
     }),
@@ -395,7 +372,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeConnectionId: next.activeConnectionId,
         activeTabId: next.activeTabId,
         queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
       });
       return next;
     });
@@ -428,7 +404,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeConnectionId: next.activeConnectionId,
         activeTabId: next.activeTabId,
         queryTabs: next.queryTabs,
-        sidebarView: next.sidebarView,
       });
       return next;
     });
@@ -491,7 +466,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeConnectionId: next.activeConnectionId,
           activeTabId: next.activeTabId,
           queryTabs: next.queryTabs,
-          sidebarView: next.sidebarView,
         });
         return next;
       });
@@ -562,7 +536,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeConnectionId: next.activeConnectionId,
           activeTabId: next.activeTabId,
           queryTabs: next.queryTabs,
-          sidebarView: next.sidebarView,
         });
         return next;
       });

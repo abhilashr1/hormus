@@ -3,20 +3,17 @@ import type {
   ConnectionDeleteInput,
   ConnectionTestInput,
   ConnectionUpdateInput,
-  DescribeTableInput,
-  DesktopSnapshot,
   HormusDesktopBackend,
-  ListTablesInput,
+  QueryExportCsvInput,
   QueryRunInput,
   QueryTab,
 } from "../src/shared/ipc.js";
 import { desktopSnapshotSchema } from "../src/shared/ipc.js";
-import { describeLiveTable, listLiveSchemas, runLiveQuery, testLiveConnection } from "./db.js";
+import { exportLiveQueryToCsv, listLiveSchemas, runLiveQuery, testLiveConnection } from "./db.js";
 import { DesktopStorage } from "./storage.js";
 
 interface BackendState {
   activeConnectionId: string;
-  sidebarView: DesktopSnapshot["sidebarView"];
   queryTabs: QueryTab[];
   activeTabId: string;
 }
@@ -52,7 +49,6 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
   const connections = await storage.listConnections();
   const state: BackendState = {
     activeConnectionId: connections[0]?.id ?? "",
-    sidebarView: "schemas",
     queryTabs: [createEmptyTab()],
     activeTabId: "",
   };
@@ -81,7 +77,6 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
       return desktopSnapshotSchema.parse({
         connections: currentConnections,
         activeConnectionId: state.activeConnectionId,
-        sidebarView: state.sidebarView,
         queryTabs: state.queryTabs,
         activeTabId: state.activeTabId,
       });
@@ -126,21 +121,6 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
 
     async listSchemas(connectionId: string) {
       return listSchemas(connectionId);
-    },
-
-    async listTables(input: ListTablesInput) {
-      const schemas = await listSchemas(input.connectionId);
-      const schema = schemas.find((item) => item.name === input.schema);
-      return clone(schema?.tables ?? []);
-    },
-
-    async describeTable(input: DescribeTableInput) {
-      const connection = await storage.getConnection(input.connectionId);
-      if (!connection) {
-        throw new Error(`Connection ${input.connectionId} not found`);
-      }
-
-      return describeLiveTable(connection, input.schema, input.table);
     },
 
     async listHistory(connectionId: string) {
@@ -196,6 +176,21 @@ export async function createElectronDesktopBackend(): Promise<HormusDesktopBacke
       return {
         tab: clone(tab),
         result,
+      };
+    },
+
+    async exportQueryCsv(input: QueryExportCsvInput) {
+      const connection = await storage.getConnection(input.connectionId);
+      if (!connection) {
+        throw new Error(`Connection ${input.connectionId} not found`);
+      }
+
+      const baseFileName = (input.suggestedFileName?.trim() || "query-results.csv").replace(/[\\/:*?"<>|]+/g, "-");
+      const defaultFileName = baseFileName.toLowerCase().endsWith(".csv") ? baseFileName : `${baseFileName}.csv`;
+
+      return {
+        defaultFileName,
+        csv: await exportLiveQueryToCsv(connection, input.sql),
       };
     },
   };

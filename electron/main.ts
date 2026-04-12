@@ -1,5 +1,6 @@
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { app, BrowserWindow, ipcMain, nativeImage, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import {
   connectionCreateInputSchema,
@@ -7,8 +8,7 @@ import {
   connectionTestInputSchema,
   connectionUpdateInputSchema,
   type HormusDesktopBackend,
-  describeTableInputSchema,
-  listTablesInputSchema,
+  queryExportCsvInputSchema,
   queryRunInputSchema,
 } from "../src/shared/ipc.js";
 import { createElectronDesktopBackend } from "./backend.js";
@@ -152,11 +152,27 @@ function registerIpc() {
   handle("connections:test", async (_event, input) => desktopBackend.testConnection(connectionTestInputSchema.parse(input)));
   handle("connections:delete", async (_event, input) => desktopBackend.deleteConnection(connectionDeleteInputSchema.parse(input)));
   handle("schemas:list", async (_event, connectionId: string) => desktopBackend.listSchemas(connectionId));
-  handle("tables:list", async (_event, input) => desktopBackend.listTables(listTablesInputSchema.parse(input)));
-  handle("tables:describe", async (_event, input) => desktopBackend.describeTable(describeTableInputSchema.parse(input)));
   handle("history:list", async (_event, connectionId: string) => desktopBackend.listHistory(connectionId));
   handle("results:get", async (_event, tabId: string) => desktopBackend.getResults(tabId));
   handle("query:run", async (_event, input) => desktopBackend.runQuery(queryRunInputSchema.parse(input)));
+  handle("query:exportCsv", async (event, input) => {
+    const { defaultFileName, csv } = await desktopBackend.exportQueryCsv(queryExportCsvInputSchema.parse(input));
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    const dialogOptions = {
+      defaultPath: defaultFileName,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    };
+    const saveResult = browserWindow
+      ? await dialog.showSaveDialog(browserWindow, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+
+    if (saveResult.canceled || !saveResult.filePath) {
+      return { canceled: true as const };
+    }
+
+    await writeFile(saveResult.filePath, csv, "utf8");
+    return { canceled: false as const, path: saveResult.filePath };
+  });
   handle("window:openConnection", async (_event, connectionId?: string) => {
     await createConnectionWindow(connectionId);
   });

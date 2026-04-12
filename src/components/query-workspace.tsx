@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QueryEditor } from "@/components/query-editor";
 import { ResultsGrid } from "@/components/results-grid";
+import { getDesktopApi } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 import type { Connection, SchemaNode } from "@/shared/ipc";
@@ -64,6 +65,7 @@ export function QueryWorkspace() {
   const [objectSearch, setObjectSearch] = useState("");
   const [isObjectSearchVisible, setIsObjectSearchVisible] = useState(false);
   const [tableContextMenu, setTableContextMenu] = useState<TableContextMenu | null>(null);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
   const selectedSchemaNode = state.schemas.find((schema) => schema.name === state.selectedSchema) ?? state.schemas[0];
   const tableObjects = selectedSchemaNode?.tables ?? [];
   const filteredTableObjects = useMemo(() => {
@@ -129,6 +131,23 @@ export function QueryWorkspace() {
       sql,
       run: true,
     });
+  };
+  const exportResultsCsv = async () => {
+    const executedSql = state.lastRunQueryByTab[activeTab.id];
+    if (!executedSql || isExportingCsv) {
+      return;
+    }
+
+    setIsExportingCsv(true);
+    try {
+      await getDesktopApi().exportQueryCsv({
+        connectionId: activeConnection.id,
+        sql: executedSql,
+        suggestedFileName: `${activeTab.title || "query-results"}.csv`,
+      });
+    } finally {
+      setIsExportingCsv(false);
+    }
   };
 
   return (
@@ -277,28 +296,6 @@ export function QueryWorkspace() {
           </aside>
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
-                  <span>Hormus</span>
-                  <span>›</span>
-                  <span>{activeConnection.name}</span>
-                </div>
-                <h1 className="mt-1 truncate text-[22px] font-semibold">{activeTab.title}</h1>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={() => void state.runTab(activeTab.id)}
-                  disabled={!canRunQuery}
-                  className="text-xs [&_svg]:size-3"
-                >
-                  <Play />
-                  {state.isRunningQuery ? "Running..." : "Run Query"}
-                </Button>
-              </div>
-            </div>
-
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex h-11 items-end border-b border-[var(--border)] bg-[#101216] px-3">
                 <Tabs value={activeTab.id} onValueChange={(value) => void state.setActiveTab(value)} className="min-w-0 flex-1">
@@ -367,6 +364,16 @@ export function QueryWorkspace() {
                 <Button size="icon" variant="ghost" onClick={() => void state.createTab()} className="mb-1 size-8 rounded-none">
                   <Plus className="size-4" />
                 </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => void state.runTab(activeTab.id)}
+                  disabled={!canRunQuery}
+                  aria-label={state.isRunningQuery ? "Running query" : "Run query"}
+                  className="mb-1 size-8 rounded-none text-[#55c27a] hover:text-[#6fd68f] disabled:text-[#3d6b4b]"
+                >
+                  <Play className="size-4 fill-current" />
+                </Button>
               </div>
 
               <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
@@ -395,6 +402,8 @@ export function QueryWorkspace() {
                     outputHistory={state.outputHistoryByTab[activeTab.id] ?? []}
                     isLoading={state.isRunningQuery}
                     onPageChange={(pageOffset) => void state.runTabPage(activeTab.id, pageOffset)}
+                    onExportCsv={() => void exportResultsCsv()}
+                    isExportingCsv={isExportingCsv}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>

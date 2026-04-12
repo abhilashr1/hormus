@@ -118,6 +118,40 @@ select {
 }
 
 .hormus-results-grid .ag-header,
+.hormus-results-grid .ag-header-viewport,
+.hormus-results-grid .ag-pinned-left-header,
+.hormus-results-grid .ag-pinned-left-header-viewport,
+.hormus-results-grid .ag-pinned-left-cols-container,
+.hormus-results-grid .ag-pinned-left-cols-viewport,
+.hormus-results-grid .ag-pinned-left-header .ag-header-row,
+.hormus-results-grid .ag-header .ag-header-row,
+.hormus-results-grid .ag-pinned-left-cols-container .ag-row,
+.hormus-results-grid .ag-pinned-left-floating-top,
+.hormus-results-grid .ag-pinned-left-floating-bottom {
+  background: #15171b;
+}
+
+.hormus-results-grid .ag-header-cell.hormus-selection-gutter,
+.hormus-results-grid .ag-cell.hormus-selection-gutter {
+  width: 20px !important;
+  min-width: 20px !important;
+  max-width: 20px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  background: #15171b;
+}
+
+.hormus-results-grid .ag-header-cell.hormus-selection-gutter .ag-header-cell-comp-wrapper,
+.hormus-results-grid .ag-cell.hormus-selection-gutter .ag-cell-wrapper {
+  justify-content: center;
+  width: 100%;
+}
+
+.hormus-results-grid .ag-selection-checkbox-header,
+.hormus-results-grid .ag-selection-checkbox {
+  background: transparent;
+}
+
 .hormus-results-grid .ag-row,
 .hormus-results-grid .ag-center-cols-viewport {
   background-color: transparent;
@@ -126,6 +160,23 @@ select {
 .hormus-results-grid .ag-cell,
 .hormus-results-grid .ag-header-cell {
   color: var(--foreground);
+  border-right: 1px solid var(--border);
+}
+
+.hormus-results-grid .ag-header-cell.hormus-selection-gutter,
+.hormus-results-grid .ag-cell.hormus-selection-gutter {
+  border-right: 1px solid var(--border);
+}
+
+.hormus-results-grid .ag-selection-checkbox,
+.hormus-results-grid .ag-checkbox-input-wrapper,
+.hormus-results-grid .ag-checkbox-input,
+.hormus-results-grid .ag-checkbox-label {
+  opacity: 0;
+}
+
+.hormus-results-grid .ag-selection-checkbox {
+  pointer-events: none;
 }
 
 .hormus-results-grid .ag-overlay-no-rows-center {

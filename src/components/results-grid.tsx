@@ -7,12 +7,13 @@ import {
   type ColDef,
   type SelectionChangedEvent,
 } from "ag-grid-community";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ interface ResultsGridProps {
   }>;
   isLoading?: boolean;
   onPageChange?: (pageOffset: number) => void;
+  onExportCsv?: () => void;
+  isExportingCsv?: boolean;
 }
 
 type ResultsPanelTab = "output" | "results";
@@ -96,11 +99,21 @@ function formatCellValue(value: unknown) {
   return String(value);
 }
 
-export function ResultsGrid({ result, error, queryText, outputHistory = [], isLoading, onPageChange }: ResultsGridProps) {
+export function ResultsGrid({
+  result,
+  error,
+  queryText,
+  outputHistory = [],
+  isLoading,
+  onPageChange,
+  onExportCsv,
+  isExportingCsv,
+}: ResultsGridProps) {
   const [activePanel, setActivePanel] = useState<ResultsPanelTab>("output");
   const [isResultsTabClosed, setIsResultsTabClosed] = useState(false);
   const [cellContextMenu, setCellContextMenu] = useState<CellContextMenu | null>(null);
   const [viewedCell, setViewedCell] = useState<ViewedCell | null>(null);
+  const [pageInput, setPageInput] = useState("1");
   const selectedRowsRef = useRef<ResultRow[]>([]);
   const lastClickedCellRef = useRef<string | null>(null);
   const resultsPanelRef = useRef<HTMLDivElement>(null);
@@ -136,6 +149,10 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
     setCellContextMenu(null);
     setViewedCell(null);
   }, [result]);
+
+  useEffect(() => {
+    setPageInput(String(currentPage + 1));
+  }, [currentPage]);
 
   useEffect(() => {
     if (!cellContextMenu) {
@@ -204,6 +221,19 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
       title: cell.column,
       content: formatCellValue(cell.value),
     });
+  };
+  const commitPageInput = () => {
+    const parsedPage = Number(pageInput);
+    if (!Number.isInteger(parsedPage)) {
+      setPageInput(String(currentPage + 1));
+      return;
+    }
+
+    const clampedPage = Math.min(pageCount, Math.max(1, parsedPage));
+    setPageInput(String(clampedPage));
+    if (clampedPage !== currentPage + 1) {
+      onPageChange?.((clampedPage - 1) * pageSize);
+    }
   };
 
   return (
@@ -317,10 +347,17 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
       ) : (
         <div ref={resultsPanelRef} className="relative flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2">
-            <div className="text-[12px] text-[var(--muted-foreground)]">
-              Page {currentPage + 1}, Total Results: {totalRows.toLocaleString()}
-            </div>
+            <div className="text-[12px] text-[var(--muted-foreground)]">{totalRows.toLocaleString()} results</div>
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onExportCsv}
+                disabled={!onExportCsv || isExportingCsv || !result || result.columns.length === 0}
+                aria-label={isExportingCsv ? "Exporting results as CSV" : "Download all results as CSV"}
+              >
+                <Download className="size-4" />
+              </Button>
               <Button variant="ghost" size="icon" onClick={() => onPageChange?.(0)} disabled={!canGoBack}>
                 <ChevronsLeft className="size-4" />
               </Button>
@@ -332,6 +369,23 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
               >
                 <ChevronLeft className="size-4" />
               </Button>
+              <div className="mx-1 flex items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
+                <span>Page</span>
+                <Input
+                  value={pageInput}
+                  onChange={(event) => setPageInput(event.target.value.replace(/[^\d]/g, ""))}
+                  onBlur={commitPageInput}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      commitPageInput();
+                    }
+                  }}
+                  inputMode="numeric"
+                  aria-label="Current results page"
+                  className="h-7 w-14 rounded-[6px] px-2 text-center text-[12px]"
+                />
+                <span>of {pageCount.toLocaleString()}</span>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -356,9 +410,21 @@ export function ResultsGrid({ result, error, queryText, outputHistory = [], isLo
               theme="legacy"
               rowData={result?.rows ?? []}
               columnDefs={columnDefs}
+              selectionColumnDef={{
+                width: 20,
+                minWidth: 20,
+                maxWidth: 20,
+                resizable: false,
+                sortable: false,
+                suppressHeaderMenuButton: true,
+                suppressMovable: true,
+                pinned: "left",
+                headerClass: "hormus-selection-gutter",
+                cellClass: "hormus-selection-gutter",
+              }}
               animateRows
               overlayNoRowsTemplate="<span>No rows returned.</span>"
-              rowSelection={{ mode: "multiRow", enableClickSelection: false }}
+              rowSelection={{ mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: true } as never}
               onCellClicked={(event: CellClickedEvent<ResultRow>) => {
                 lastClickedCellRef.current = valueToClipboardText(event.value);
               }}

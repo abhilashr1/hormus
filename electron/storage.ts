@@ -228,12 +228,6 @@ export class DesktopStorage {
     await this.save();
   }
 
-  async getConnectionPassword(connectionId: string) {
-    const state = await this.load();
-    const connection = state.connections.find((item) => item.id === connectionId);
-    return decodeSecret(connection?.secret);
-  }
-
   async getConnection(connectionId: string) {
     const state = await this.load();
     const connection = state.connections.find((item) => item.id === connectionId);

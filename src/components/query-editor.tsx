@@ -1,5 +1,6 @@
 import Editor from "@monaco-editor/react";
 import type { OnMount } from "@monaco-editor/react";
+import { useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 
 interface QueryEditorProps {
@@ -10,23 +11,34 @@ interface QueryEditorProps {
 }
 
 export function QueryEditor({ value, onChange, onSelectionChange, onRun }: QueryEditorProps) {
+  const onRunRef = useRef(onRun);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+
+  useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
+
+  useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
+
   const handleMount: OnMount = (editor, monaco) => {
     const updateSelection = () => {
       const selection = editor.getSelection();
       const model = editor.getModel();
       if (!selection || !model || selection.isEmpty()) {
-        onSelectionChange?.("");
+        onSelectionChangeRef.current?.("");
         return;
       }
 
-      onSelectionChange?.(model.getValueInRange(selection));
+      onSelectionChangeRef.current?.(model.getValueInRange(selection));
     };
 
     updateSelection();
     editor.onDidChangeCursorSelection(updateSelection);
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       updateSelection();
-      onRun?.();
+      onRunRef.current?.();
     });
   };
 
