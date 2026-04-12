@@ -47,6 +47,8 @@ jobs:
         run: npm run check
 
       - name: Build distributables
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run dist
 
       - name: Upload release assets

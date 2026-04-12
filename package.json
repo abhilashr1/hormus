@@ -3,7 +3,10 @@
   "productName": "Hormus - Database Client",
   "version": "0.1.0",
   "description": "Developer-first desktop database client.",
-  "author": "Hormus",
+  "author": {
+    "name": "Abhilash Rejanair",
+    "email": "abhilash@rejanair.com"
+  },
   "private": true,
   "type": "module",
   "main": "dist-electron/electron/main.js",
