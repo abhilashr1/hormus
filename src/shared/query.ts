@@ -6,6 +6,15 @@ export interface SqlQuerySegment {
   endOffset: number;
 }
 
+export interface SqlParameterPlaceholder {
+  id: string;
+  token: string;
+  kind: "positional" | "named" | "anonymous";
+  name: string;
+  startOffset: number;
+  endOffset: number;
+}
+
 export function stripSqlComments(sql: string) {
   let output = "";
   let index = 0;
@@ -214,4 +223,264 @@ export function prepareStatementsForExecution(sql: string) {
 
 export function getSqlQueryAtOffset(sql: string, offset: number) {
   return parseSqlQueries(sql).find((segment) => offset >= segment.startOffset && offset <= segment.endOffset) ?? null;
+}
+
+function isIdentifierCharacter(char: string | undefined) {
+  return !!char && /[A-Za-z0-9_]/.test(char);
+}
+
+function getPreviousNonWhitespaceCharacter(sql: string, offset: number) {
+  let cursor = offset - 1;
+
+  while (cursor >= 0 && /\s/.test(sql[cursor] ?? "")) {
+    cursor -= 1;
+  }
+
+  return cursor >= 0 ? sql[cursor] : undefined;
+}
+
+function readDollarQuotedTag(sql: string, offset: number) {
+  if (sql[offset] !== "$") {
+    return null;
+  }
+
+  let cursor = offset + 1;
+  while (cursor < sql.length && /[A-Za-z0-9_]/.test(sql[cursor] ?? "")) {
+    cursor += 1;
+  }
+
+  if (sql[cursor] !== "$") {
+    return null;
+  }
+
+  return sql.slice(offset, cursor + 1);
+}
+
+function scanSqlParameters(sql: string) {
+  const placeholders: SqlParameterPlaceholder[] = [];
+  const seenNamed = new Set<string>();
+  const seenPositional = new Set<string>();
+  const uniquePlaceholders: SqlParameterPlaceholder[] = [];
+  let index = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inBacktickQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let dollarQuoteTag: string | null = null;
+  let anonymousCounter = 0;
+
+  while (index < sql.length) {
+    const char = sql[index];
+    const next = sql[index + 1];
+
+    if (inLineComment) {
+      if (char === "\n") {
+        inLineComment = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index += 2;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (dollarQuoteTag) {
+      if (sql.startsWith(dollarQuoteTag, index)) {
+        const tagLength = dollarQuoteTag.length;
+        dollarQuoteTag = null;
+        index += tagLength;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'" && next === "'") {
+        index += 2;
+        continue;
+      }
+      if (char === "'") {
+        inSingleQuote = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === "\"" && next === "\"") {
+        index += 2;
+        continue;
+      }
+      if (char === "\"") {
+        inDoubleQuote = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (inBacktickQuote) {
+      if (char === "`" && next === "`") {
+        index += 2;
+        continue;
+      }
+      if (char === "`") {
+        inBacktickQuote = false;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (char === "-" && next === "-") {
+      inLineComment = true;
+      index += 2;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      inBlockComment = true;
+      index += 2;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "\"") {
+      inDoubleQuote = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "`") {
+      inBacktickQuote = true;
+      index += 1;
+      continue;
+    }
+
+    const nextDollarQuoteTag = readDollarQuotedTag(sql, index);
+    if (nextDollarQuoteTag) {
+      dollarQuoteTag = nextDollarQuoteTag;
+      index += nextDollarQuoteTag.length;
+      continue;
+    }
+
+    if (char === "$" && /\d/.test(next ?? "")) {
+      let cursor = index + 1;
+      while (cursor < sql.length && /\d/.test(sql[cursor] ?? "")) {
+        cursor += 1;
+      }
+
+      const token = sql.slice(index, cursor);
+      const placeholder: SqlParameterPlaceholder = {
+        id: token,
+        token,
+        kind: "positional",
+        name: token.slice(1),
+        startOffset: index,
+        endOffset: cursor,
+      };
+      placeholders.push(placeholder);
+      if (!seenPositional.has(token)) {
+        uniquePlaceholders.push(placeholder);
+        seenPositional.add(token);
+      }
+
+      index = cursor;
+      continue;
+    }
+
+    if (char === ":" && sql[index - 1] !== ":" && next !== ":" && next !== "=" && /[A-Za-z_]/.test(next ?? "")) {
+      let cursor = index + 1;
+      while (cursor < sql.length && isIdentifierCharacter(sql[cursor])) {
+        cursor += 1;
+      }
+
+      const token = sql.slice(index, cursor);
+      const placeholder: SqlParameterPlaceholder = {
+        id: token,
+        token,
+        kind: "named",
+        name: token.slice(1),
+        startOffset: index,
+        endOffset: cursor,
+      };
+      placeholders.push(placeholder);
+      if (!seenNamed.has(token)) {
+        uniquePlaceholders.push(placeholder);
+        seenNamed.add(token);
+      }
+
+      index = cursor;
+      continue;
+    }
+
+    const previousNonWhitespaceCharacter = getPreviousNonWhitespaceCharacter(sql, index);
+    if (
+      char === "?" &&
+      next !== "|" &&
+      next !== "&" &&
+      (!previousNonWhitespaceCharacter || /[=,(<>]/.test(previousNonWhitespaceCharacter))
+    ) {
+      anonymousCounter += 1;
+      const placeholder: SqlParameterPlaceholder = {
+        id: `?${anonymousCounter}`,
+        token: "?",
+        kind: "anonymous",
+        name: `param${anonymousCounter}`,
+        startOffset: index,
+        endOffset: index + 1,
+      };
+      placeholders.push(placeholder);
+      uniquePlaceholders.push(placeholder);
+      index += 1;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return {
+    all: placeholders,
+    unique: uniquePlaceholders,
+  };
+}
+
+export function detectSqlParameters(sql: string) {
+  return scanSqlParameters(sql).unique;
+}
+
+export function substituteSqlParameters(sql: string, values: Record<string, string>) {
+  const placeholders = scanSqlParameters(sql).all;
+  if (placeholders.length === 0) {
+    return sql;
+  }
+
+  let output = "";
+  let cursor = 0;
+
+  for (const placeholder of placeholders) {
+    const replacement = values[placeholder.id];
+    if (replacement === undefined) {
+      throw new Error(`Missing value for parameter ${placeholder.token}`);
+    }
+
+    output += sql.slice(cursor, placeholder.startOffset);
+    output += replacement;
+    cursor = placeholder.endOffset;
+  }
+
+  output += sql.slice(cursor);
+  return output;
 }

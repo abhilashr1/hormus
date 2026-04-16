@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { QueryResult } from "@/shared/ipc";
@@ -40,6 +41,10 @@ interface ResultsGridProps {
 
 type ResultsPanelTab = "output" | "results";
 type ResultRow = QueryResult["rows"][number];
+type ActiveCell = {
+  column: string;
+  value: unknown;
+};
 type CellContextMenu = {
   x: number;
   y: number;
@@ -96,6 +101,29 @@ function formatCellValue(value: unknown) {
   return String(value);
 }
 
+function isSelectionGutterColumn(column: CellClickedEvent<ResultRow>["column"] | CellContextMenuEvent<ResultRow>["column"]) {
+  return column.getColDef().cellClass === "hormus-selection-gutter" || column.getColDef().headerClass === "hormus-selection-gutter";
+}
+
+function buildOutputTranscript(outputHistory: QueryOutputEntry[], queryText?: string, fallbackMessage?: string) {
+  if (outputHistory.length === 0) {
+    const queryBlock = queryText?.trim() ? queryText : "No query has been run yet.";
+    return [`Status`, fallbackMessage ?? "Run a query to see output", "", `Query`, queryBlock].join("\n");
+  }
+
+  return outputHistory
+    .map((entry) =>
+      [
+        `[${entry.ranAt}] ${entry.status.toUpperCase()}: ${entry.message}`,
+        typeof entry.durationMs === "number" ? `Duration: ${entry.durationMs}ms` : null,
+        entry.query.trim() ? entry.query : "(no query text)",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .join("\n\n");
+}
+
 export function ResultsGrid({
   result,
   error,
@@ -108,6 +136,7 @@ export function ResultsGrid({
 }: ResultsGridProps) {
   const [activePanel, setActivePanel] = useState<ResultsPanelTab>("output");
   const [isResultsTabClosed, setIsResultsTabClosed] = useState(false);
+  const [activeCell, setActiveCell] = useState<ActiveCell | null>(null);
   const [cellContextMenu, setCellContextMenu] = useState<CellContextMenu | null>(null);
   const [viewedCell, setViewedCell] = useState<ViewedCell | null>(null);
   const [pageInput, setPageInput] = useState("1");
@@ -123,6 +152,7 @@ export function ResultsGrid({
   const currentPage = Math.min(Math.floor(currentOffset / pageSize), pageCount - 1);
   const canGoBack = currentPage > 0 && !isLoading;
   const canGoForward = currentPage < pageCount - 1 && !isLoading;
+  const hasRowData = (result?.rows.length ?? 0) > 0;
 
   useEffect(() => {
     setActivePanel((current) => (current === "results" && !showResultsTab ? "output" : current));
@@ -143,6 +173,7 @@ export function ResultsGrid({
   useEffect(() => {
     selectedRowsRef.current = [];
     lastClickedCellRef.current = null;
+    setActiveCell(null);
     setCellContextMenu(null);
     setViewedCell(null);
   }, [result]);
@@ -190,6 +221,10 @@ export function ResultsGrid({
     : result
       ? `Returned ${totalRows.toLocaleString()} rows in ${result.durationMs}ms`
       : "Run a query to see output";
+  const outputTranscript = useMemo(
+    () => buildOutputTranscript(outputHistory, queryText, error ?? resultSummary),
+    [error, outputHistory, queryText, resultSummary],
+  );
   const copyResultsSelection = async (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (activePanel !== "results" || event.key.toLowerCase() !== "c" || (!event.metaKey && !event.ctrlKey)) {
       return;
@@ -199,7 +234,9 @@ export function ResultsGrid({
     const clipboardText =
       selectedRows.length > 0
         ? rowsToClipboardText(selectedRows, result?.columns ?? [])
-        : lastClickedCellRef.current;
+        : activeCell
+          ? valueToClipboardText(activeCell.value)
+          : lastClickedCellRef.current;
 
     if (clipboardText === null || clipboardText === undefined) {
       return;
@@ -299,57 +336,14 @@ export function ResultsGrid({
         </Badge>
       </div>
       {activePanel === "output" ? (
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="p-4">
-          {outputHistory.length > 0 ? (
-            <div className="space-y-4">
-              {outputHistory.map((entry) => (
-                <Card key={entry.id} className="gap-0 rounded-none bg-[#0f1114] py-0">
-                  <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
-                    <p
-                      className={cn(
-                        "text-[13px]",
-                        entry.status === "error"
-                          ? "text-red-300"
-                          : entry.status === "info"
-                            ? "text-emerald-300"
-                            : "text-[var(--foreground)]",
-                      )}
-                    >
-                      {entry.message}
-                    </p>
-                    <span className="text-[11px] text-[var(--muted-foreground)]">{entry.ranAt}</span>
-                  </div>
-                  <ScrollArea className="max-h-[180px]">
-                    <pre className="p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">{entry.query}</pre>
-                  </ScrollArea>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
-                  Status
-                </p>
-                <p className={cn("mt-1 text-[13px]", error ? "text-red-300" : "text-[var(--foreground)]")}>
-                  {error ?? resultSummary}
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
-                  Query
-                </p>
-                <ScrollArea className="mt-2 max-h-[220px] border border-[var(--border)] bg-[#0f1114]">
-                  <pre className="p-3 font-mono text-[12px] leading-5 text-[var(--foreground)]">
-                    {queryText?.trim() ? queryText : "No query has been run yet."}
-                  </pre>
-                </ScrollArea>
-              </div>
-            </div>
-          )}
-          </div>
-        </ScrollArea>
+        <div className="min-h-0 flex-1 p-4">
+          <Textarea
+            readOnly
+            value={outputTranscript}
+            aria-label="Query output history"
+            className="h-full resize-none overflow-auto rounded-none border-[var(--border)] bg-[#0f1114] font-mono text-[12px] leading-5 text-[var(--foreground)]"
+          />
+        </div>
       ) : (
         <div ref={resultsPanelRef} className="relative flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-2">
@@ -430,9 +424,27 @@ export function ResultsGrid({
               }}
               animateRows
               overlayNoRowsTemplate="<span>No rows returned.</span>"
-              rowSelection={{ mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: true } as never}
+              rowSelection={{ mode: "multiRow", checkboxes: hasRowData, headerCheckbox: hasRowData, enableClickSelection: false } as never}
               onCellClicked={(event: CellClickedEvent<ResultRow>) => {
+                if (isSelectionGutterColumn(event.column)) {
+                  event.node.setSelected(!event.node.isSelected());
+                  return;
+                }
+
+                const nextActiveCell = {
+                  column: event.column.getColDef().headerName ?? String(event.column.getColId()),
+                  value: event.value,
+                };
                 lastClickedCellRef.current = valueToClipboardText(event.value);
+                setActiveCell(nextActiveCell);
+                setViewedCell((current) =>
+                  current
+                    ? {
+                        title: nextActiveCell.column,
+                        content: formatCellValue(nextActiveCell.value),
+                      }
+                    : current,
+                );
               }}
               onCellContextMenu={(event: CellContextMenuEvent<ResultRow>) => {
                 if (!(event.event instanceof MouseEvent)) {

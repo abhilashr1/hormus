@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { QueryEditor } from "@/components/query-editor";
+import { QueryParameterDialog } from "@/components/query-parameter-dialog";
 import { ResultsGrid } from "@/components/results-grid";
 import { Card } from "@/components/ui/card";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -9,6 +10,7 @@ import { WorkspaceTabBar } from "@/components/workspace-tab-bar";
 import { getDesktopApi } from "@/lib/desktop";
 import { quoteQualifiedName } from "@/shared/database";
 import type { Connection, QueryTab } from "@/shared/ipc";
+import { detectSqlParameters, substituteSqlParameters, type SqlParameterPlaceholder } from "@/shared/query";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 
 function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
@@ -23,6 +25,11 @@ export function QueryWorkspace() {
   const state = useAppStore();
   const activeConnection = selectActiveConnection(state);
   const activeTab = selectActiveTab(state);
+  const [pendingParameterizedRun, setPendingParameterizedRun] = useState<{
+    tabId: string;
+    query: string;
+    parameters: SqlParameterPlaceholder[];
+  } | null>(null);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [objectSearch, setObjectSearch] = useState("");
@@ -127,6 +134,23 @@ export function QueryWorkspace() {
       setIsExportingCsv(false);
     }
   };
+  const requestRun = async (tab: QueryTab, query: string) => {
+    const parameters = detectSqlParameters(query);
+    if (parameters.length === 0) {
+      if (!tab.selection && query === tab.sql) {
+        await state.runTab(tab.id);
+      } else {
+        await state.runTab(tab.id, query);
+      }
+      return;
+    }
+
+    setPendingParameterizedRun({
+      tabId: tab.id,
+      query,
+      parameters,
+    });
+  };
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
@@ -149,9 +173,9 @@ export function QueryWorkspace() {
 
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex min-h-0 flex-1 flex-col">
-              <WorkspaceTabBar
-                activeTabId={activeTab.id}
-                canRunQuery={canRunQuery}
+                <WorkspaceTabBar
+                  activeTabId={activeTab.id}
+                  canRunQuery={canRunQuery}
                 isRunningQuery={state.isRunningQuery}
                 queryTabs={state.queryTabs}
                 renamingTabId={renamingTabId}
@@ -166,10 +190,10 @@ export function QueryWorkspace() {
                 onSetActiveTab={(value) => void state.setActiveTab(value)}
                 onCloseTab={(tabId) => void state.closeTab(tabId)}
                 onCreateTab={() => void state.createTab()}
-                onRunActiveTab={() => void state.runTab(activeTab.id)}
+                onRunActiveTab={() => void requestRun(activeTab, activeTab.selection ?? activeTab.sql)}
               />
 
-              <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
+                <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
                 <ResizablePanel defaultSize="50%" minSize="25%" maxSize="80%" className="min-h-[160px]">
                   <div className="h-full p-3">
                     <QueryEditor
@@ -181,12 +205,12 @@ export function QueryWorkspace() {
                       connectionKind={activeConnection.kind}
                       onRunQuery={(query) => {
                         if (query.trim()) {
-                          void state.runTab(activeTab.id, query);
+                          void requestRun(activeTab, query);
                         }
                       }}
                       onRun={() => {
                         if (canRunQuery) {
-                          void state.runTab(activeTab.id);
+                          void requestRun(activeTab, activeTab.selection ?? activeTab.sql);
                         }
                       }}
                     />
@@ -216,6 +240,21 @@ export function QueryWorkspace() {
           </main>
         </div>
       </Card>
+      <QueryParameterDialog
+        open={pendingParameterizedRun !== null}
+        parameters={pendingParameterizedRun?.parameters ?? []}
+        onCancel={() => setPendingParameterizedRun(null)}
+        onSubmit={(values) => {
+          if (!pendingParameterizedRun) {
+            return;
+          }
+
+          const nextQuery = substituteSqlParameters(pendingParameterizedRun.query, values);
+          const tabId = pendingParameterizedRun.tabId;
+          setPendingParameterizedRun(null);
+          void state.runTab(tabId, nextQuery);
+        }}
+      />
     </div>
   );
 }

@@ -1,19 +1,29 @@
 import type { Connection } from "./ipc.js";
 
 type DatabaseKind = Connection["kind"];
+const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
+
+type DatabaseMetadata = {
+  label: string;
+  defaultPort: number;
+  quoteIdentifier: (identifier: string) => string;
+  canUseBareIdentifier: (identifier: string) => boolean;
+};
 
 export const DATABASE_METADATA = {
   postgresql: {
     label: "PostgreSQL",
     defaultPort: 5432,
+    quoteIdentifier: (identifier: string) => `"${identifier.replace(/"/g, '""')}"`,
+    canUseBareIdentifier: (identifier: string) => /^[a-z_][a-z0-9_$]*$/.test(identifier),
   },
   mysql: {
     label: "MySQL",
     defaultPort: 3306,
+    quoteIdentifier: (identifier: string) => `\`${identifier.replace(/`/g, "``")}\``,
+    canUseBareIdentifier: (identifier: string) => SIMPLE_IDENTIFIER_PATTERN.test(identifier),
   },
-} satisfies Record<DatabaseKind, { label: string; defaultPort: number }>;
-
-const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
+} satisfies Record<DatabaseKind, DatabaseMetadata>;
 
 export function getDatabaseLabel(kind: DatabaseKind) {
   return DATABASE_METADATA[kind].label;
@@ -32,15 +42,13 @@ export function quoteIdentifier(
   identifier: string,
   options?: { preserveSimple?: boolean },
 ) {
-  if (options?.preserveSimple && SIMPLE_IDENTIFIER_PATTERN.test(identifier)) {
+  const metadata = DATABASE_METADATA[kind];
+
+  if (options?.preserveSimple && metadata.canUseBareIdentifier(identifier)) {
     return identifier;
   }
 
-  if (kind === "mysql") {
-    return `\`${identifier.replace(/`/g, "``")}\``;
-  }
-
-  return `"${identifier.replace(/"/g, '""')}"`;
+  return metadata.quoteIdentifier(identifier);
 }
 
 export function quoteQualifiedName(

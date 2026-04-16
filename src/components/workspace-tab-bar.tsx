@@ -41,10 +41,10 @@ export function WorkspaceTabBar({
 }: WorkspaceTabBarProps) {
   return (
     <div
-      className="flex h-[calc(2.75rem+var(--window-titlebar-height))] items-end border-b border-[var(--border)] px-3 backdrop-blur-sm"
+      className="hormus-drag-region flex h-[calc(2.75rem+var(--window-titlebar-height))] items-end border-b border-[var(--border)] px-3 backdrop-blur-sm"
       style={{ backgroundColor: "rgba(16, 18, 22, 0.78)" }}
     >
-      <Tabs value={activeTabId} onValueChange={onSetActiveTab} className="min-w-0 flex-1">
+      <Tabs value={activeTabId} onValueChange={onSetActiveTab} className="hormus-no-drag min-w-0 flex-1">
         <TabsList className="h-auto max-w-full justify-start gap-0 overflow-visible rounded-none bg-transparent p-0">
           {queryTabs.map((tab) => (
             <div
@@ -106,7 +106,7 @@ export function WorkspaceTabBar({
           ))}
         </TabsList>
       </Tabs>
-      <Button size="icon" variant="ghost" onClick={onCreateTab} className="mb-1 size-8 rounded-none">
+      <Button size="icon" variant="ghost" onClick={onCreateTab} className="hormus-no-drag mb-1 size-8 rounded-none">
         <Plus className="size-4" />
       </Button>
       <Button
@@ -115,7 +115,7 @@ export function WorkspaceTabBar({
         onClick={onRunActiveTab}
         disabled={!canRunQuery}
         aria-label={isRunningQuery ? "Running query" : "Run query"}
-        className="mb-1 size-8 rounded-none text-[#55c27a] hover:text-[#6fd68f] disabled:text-[#3d6b4b]"
+        className="hormus-no-drag mb-1 size-8 rounded-none text-[#55c27a] hover:text-[#6fd68f] disabled:text-[#3d6b4b]"
       >
         <Play className="size-4 fill-current" />
       </Button>

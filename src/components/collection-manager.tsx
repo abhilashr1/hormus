@@ -1,4 +1,4 @@
-import { Database, GripVertical, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Database, GripVertical, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -321,6 +321,10 @@ export function CollectionManager() {
         backgroundSize: "cover",
       }}
     >
+      <div
+        className="hormus-drag-region fixed inset-x-0 top-0 z-20 h-[var(--window-titlebar-height)]"
+        aria-hidden="true"
+      />
       <div className="flex min-h-[calc(100vh-var(--window-titlebar-height))]">
         {isSidebarVisible ? (
           <>
@@ -548,12 +552,16 @@ export function CollectionManager() {
                           aria-label={`Use color ${color}`}
                           aria-pressed={form.color === color}
                           className={cn(
-                            "size-7 rounded-md p-0 transition-transform",
-                            form.color === color ? "scale-110 border-white" : "border-transparent hover:scale-105",
+                            "relative size-7 cursor-pointer rounded-md p-0 transition-transform",
+                            form.color === color
+                              ? "scale-110 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.16)]"
+                              : "border-transparent hover:scale-105 hover:border-white/20",
                           )}
                           style={{ backgroundColor: color }}
                           onClick={() => setField("color", color)}
-                        />
+                        >
+                          {form.color === color ? <Check className="size-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]" /> : null}
+                        </Button>
                       ))}
                     </div>
                   </div>

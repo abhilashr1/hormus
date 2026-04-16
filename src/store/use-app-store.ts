@@ -21,6 +21,7 @@ export interface QueryOutputEntry {
   query: string;
   message: string;
   status: "success" | "error" | "info";
+  durationMs?: number;
   ranAt: string;
   occurredAt: string;
 }
@@ -114,13 +115,19 @@ function persist(state: Pick<AppState, "activeConnectionId" | "queryTabs" | "act
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function createOutputEntry(query: string, message: string, status: QueryOutputEntry["status"]): QueryOutputEntry {
+function createOutputEntry(
+  query: string,
+  message: string,
+  status: QueryOutputEntry["status"],
+  options?: { durationMs?: number },
+): QueryOutputEntry {
   const occurredAt = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     query,
     message,
     status,
+    durationMs: options?.durationMs,
     ranAt: new Date().toLocaleString(),
     occurredAt,
   };
@@ -499,7 +506,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const history = await getDesktopApi().listHistory(state.activeConnectionId);
 
       set((current) => {
-        const queryTabs: QueryTab[] = current.queryTabs.map((item) => (item.id === id ? response.tab : item));
+        const queryTabs: QueryTab[] = current.queryTabs.map((item) =>
+          item.id === id ? { ...response.tab, selection: item.selection } : item,
+        );
         const next = {
           ...current,
           queryTabs,
@@ -519,6 +528,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                   ? `Returned ${response.result.rowCount.toLocaleString()} rows in ${response.result.durationMs}ms`
                   : "Query completed",
                 "success",
+                { durationMs: response.result?.durationMs },
               ),
               ...(current.outputHistoryByTab[id] ?? []),
             ],

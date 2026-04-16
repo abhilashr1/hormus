@@ -85,6 +85,14 @@ select {
   font: inherit;
 }
 
+.hormus-drag-region {
+  -webkit-app-region: drag;
+}
+
+.hormus-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 .ag-theme-quartz {
   --ag-wrapper-border-radius: 0;
   --ag-header-height: 36px;
