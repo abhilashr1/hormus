@@ -10,7 +10,7 @@ import { WorkspaceTabBar } from "@/components/workspace-tab-bar";
 import { getDesktopApi } from "@/lib/desktop";
 import { quoteQualifiedName } from "@/shared/database";
 import type { Connection, QueryTab } from "@/shared/ipc";
-import { detectSqlParameters, substituteSqlParameters, type SqlParameterPlaceholder } from "@/shared/query";
+import { detectSqlParameters, type SqlParameterPlaceholder, substituteSqlParameters } from "@/shared/query";
 import { selectActiveConnection, selectActiveTab, useAppStore } from "@/store/use-app-store";
 
 function qualifiedTableName(kind: Connection["kind"], schema: string, table: string) {
